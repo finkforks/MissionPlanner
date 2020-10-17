@@ -2,7 +2,7 @@ using System;
 using System.Reactive;
 using GMap.NET;
 
-namespace AltitudeAngel.IsolatedPlugin.Common.Maps
+namespace AltitudeAngelWings.Extra
 {
     public interface IMap
     {
@@ -12,5 +12,6 @@ namespace AltitudeAngel.IsolatedPlugin.Common.Maps
         void DeleteOverlay(string name);
         IOverlay GetOverlay(string name, bool createIfNotExists = false);
         IObservable<Unit> MapChanged { get; }
+        void Invalidate();
     }
 }

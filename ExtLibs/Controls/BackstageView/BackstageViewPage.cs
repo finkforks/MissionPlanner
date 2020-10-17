@@ -58,8 +58,8 @@ namespace MissionPlanner.Controls.BackstageView
                     _page.Visible = false;
                     _page.Location = new Point(0, 0);
                     _page.Dock = DockStyle.Fill;
-                    if (ApplyTheme != null)
-                        ApplyTheme(_page);
+                    _page.AutoScroll = true;
+                    ApplyTheme?.Invoke(_page);
                     _page.Enabled = true;
                 }
                 return _page;
@@ -67,8 +67,7 @@ namespace MissionPlanner.Controls.BackstageView
             set
             {
                 _page = value;
-                if (ApplyTheme != null)
-                    ApplyTheme(_page);
+                ApplyTheme?.Invoke(_page);
             }
         }
 

@@ -1,12 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using IronPython.Hosting;
-using System.IO;
-using System.Windows.Forms;
-using MissionPlanner;
+﻿using IronPython.Hosting;
+using Microsoft.Scripting.Hosting;
 using MissionPlanner.Utilities;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 
 namespace MissionPlanner
 {
@@ -18,7 +16,7 @@ namespace MissionPlanner
         // keeps history
         MAVLink.mavlink_rc_channels_override_t rc = new MAVLink.mavlink_rc_channels_override_t();
 
-        internal Utilities.StringRedirectWriter OutputWriter { get; private set; }
+        public StringRedirectWriter OutputWriter { get; private set; }
 
         public Script(bool redirectOutput = false)
         {
@@ -32,12 +30,19 @@ namespace MissionPlanner
 
             var paths = engine.GetSearchPaths();
             paths.Add(Settings.GetRunningDirectory() + "Lib.zip");
+            paths.Add(Settings.GetRunningDirectory() + "lib");
+            paths.Add(Settings.GetRunningDirectory());
             engine.SetSearchPaths(paths);
 
             scope = engine.CreateScope();
 
             var all = System.Reflection.Assembly.GetExecutingAssembly();
-            engine.Runtime.LoadAssembly(all);
+            var asss = AppDomain.CurrentDomain.GetAssemblies();
+            foreach (var ass in asss)
+            {
+                engine.Runtime.LoadAssembly(ass);
+            }
+            scope.SetVariable("Ports", MainV2.Comports);
             scope.SetVariable("MAV", MainV2.comPort);
             scope.SetVariable("cs", MainV2.comPort.MAV.cs);
             scope.SetVariable("Script", this);
@@ -107,7 +112,9 @@ namespace MissionPlanner
             }
             catch (Exception e)
             {
-                CustomMessageBox.Show("Error running script " + e.Message);
+                if (OutputWriter != null)
+                    OutputWriter.Write(engine.GetService<ExceptionOperations>().FormatException(e));
+                CustomMessageBox.Show("Error running script " + engine.GetService<ExceptionOperations>().FormatException(e));
             }
         }
 
@@ -130,7 +137,7 @@ namespace MissionPlanner
         public float GetParam(string param)
         {
             if (MainV2.comPort.MAV.param[param] != null)
-                return (float) MainV2.comPort.MAV.param[param];
+                return (float)MainV2.comPort.MAV.param[param];
 
             return 0.0f;
         }
@@ -144,7 +151,7 @@ namespace MissionPlanner
         public bool WaitFor(string message, int timeout)
         {
             int timein = 0;
-            while (!MainV2.comPort.MAV.cs.message.Contains(message))
+            while (!MainV2.comPort.MAV.cs.messages.Any(a => a.message.Contains(message)))
             {
                 System.Threading.Thread.Sleep(5);
                 timein += 5;
@@ -155,41 +162,41 @@ namespace MissionPlanner
             return true;
         }
 
-        public bool SendRC(int channel, ushort pwm, bool sendnow)
+        public bool SendRC(int channel, short pwm, bool sendnow)
         {
             switch (channel)
             {
                 case 1:
                     MainV2.comPort.MAV.cs.rcoverridech1 = pwm;
-                    rc.chan1_raw = pwm;
+                    rc.chan1_raw = (ushort)pwm;
                     break;
                 case 2:
                     MainV2.comPort.MAV.cs.rcoverridech2 = pwm;
-                    rc.chan2_raw = pwm;
+                    rc.chan2_raw = (ushort)pwm;
                     break;
                 case 3:
                     MainV2.comPort.MAV.cs.rcoverridech3 = pwm;
-                    rc.chan3_raw = pwm;
+                    rc.chan3_raw = (ushort)pwm;
                     break;
                 case 4:
                     MainV2.comPort.MAV.cs.rcoverridech4 = pwm;
-                    rc.chan4_raw = pwm;
+                    rc.chan4_raw = (ushort)pwm;
                     break;
                 case 5:
                     MainV2.comPort.MAV.cs.rcoverridech5 = pwm;
-                    rc.chan5_raw = pwm;
+                    rc.chan5_raw = (ushort)pwm;
                     break;
                 case 6:
                     MainV2.comPort.MAV.cs.rcoverridech6 = pwm;
-                    rc.chan6_raw = pwm;
+                    rc.chan6_raw = (ushort)pwm;
                     break;
                 case 7:
                     MainV2.comPort.MAV.cs.rcoverridech7 = pwm;
-                    rc.chan7_raw = pwm;
+                    rc.chan7_raw = (ushort)pwm;
                     break;
                 case 8:
                     MainV2.comPort.MAV.cs.rcoverridech8 = pwm;
-                    rc.chan8_raw = pwm;
+                    rc.chan8_raw = (ushort)pwm;
                     break;
             }
 
@@ -198,7 +205,7 @@ namespace MissionPlanner
 
             if (sendnow)
             {
-                MainV2.comPort.sendPacket(rc, rc.target_system,rc.target_component);
+                MainV2.comPort.sendPacket(rc, rc.target_system, rc.target_component);
                 System.Threading.Thread.Sleep(20);
                 MainV2.comPort.sendPacket(rc, rc.target_system, rc.target_component);
             }

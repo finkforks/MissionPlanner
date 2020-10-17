@@ -1,11 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Drawing;
-using System.Data;
-using System.Linq;
-using System.Text;
-using System.Windows.Forms;
+﻿using System.Windows.Forms;
 
 namespace MissionPlanner.Swarm
 {
@@ -34,6 +27,16 @@ namespace MissionPlanner.Swarm
         public Label Guided
         {
             get { return this.lbl_guided; }
+        }
+
+        public Label Location1
+        {
+            get { return this.lbl_loc; }
+        }
+
+        public Label Speed
+        {
+            get { return this.lbl_spd; }
         }
 
         public Status()

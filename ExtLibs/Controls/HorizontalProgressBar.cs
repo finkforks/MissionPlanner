@@ -89,11 +89,20 @@ System.ComponentModel.Description("draw text under Bar")]
                 {
                     ans = base.Maximum;
                 }
-                base.Value = ans;
-                //drawlbl();
-                base.Value = ans - 1;
-                //drawlbl();
-                base.Value = ans;
+
+                // To get around this animation, we need to move the progress bar backwards.
+                if (ans == Maximum)
+                {
+                    // Special case (can't set value > Maximum).
+                    base.Value = ans;           // Set the value
+                    base.Value = ans - 1;       // Move it backwards
+                }
+                else
+                {
+                    base.Value = ans + 1;       // Move past
+                }
+                base.Value = ans;               // Move to correct value
+
                 drawlbl();
 
                 if (this.Parent != null && ctladded == false)
@@ -149,6 +158,7 @@ System.ComponentModel.Description("Text under Bar")]
                 if (m_Text != value)
                 {
                     m_Text = value;
+                    drawlbl();
                 }
             }
         }
@@ -206,10 +216,14 @@ System.ComponentModel.Description("Text under Bar")]
         public int minline { get; set; }
         public int maxline { get; set; }
 
-        protected override void OnPaint(PaintEventArgs e)
+        protected new void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
             drawlbl();
+        }
+        protected override void WndProc(ref Message m)
+        {
+            base.WndProc(ref m);
         }
     }
 }

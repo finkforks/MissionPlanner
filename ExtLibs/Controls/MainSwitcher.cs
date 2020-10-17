@@ -15,6 +15,9 @@ namespace MissionPlanner.Controls
 
         public static event ThemeManager ApplyTheme;
 
+        public delegate void TrackingEventHandler(string page, string title);
+        public static event TrackingEventHandler Tracking;
+
         public List<Screen> screens = new List<Screen>();
         public Screen current;
         UserControl MainControl = new UserControl();
@@ -36,7 +39,9 @@ namespace MissionPlanner.Controls
             if (Screen == null)
                 return;
 
-            // add to list
+            // add to list - remove existing
+            if (screens.Any(a => a.Name == Screen.Name))
+                screens.Remove(screens.First(a => a.Name == Screen.Name));
             screens.Add(Screen);
 
             // hide it
@@ -145,7 +150,7 @@ namespace MissionPlanner.Controls
 
             nextscreen.Control.Dock = DockStyle.Fill;
 
-            MissionPlanner.Utilities.Tracking.AddPage(nextscreen.Control.GetType().ToString(), name);
+            Tracking?.Invoke(nextscreen.Control.GetType().ToString(), name);
 
             if (nextscreen.Control is IActivate)
             {
@@ -200,8 +205,9 @@ namespace MissionPlanner.Controls
                     {
                         Control.Visible = value;
                     }
-                    catch
+                    catch (Exception ex)
                     {
+                        Console.WriteLine(ex);
                     }
                 }
             }
@@ -237,8 +243,8 @@ namespace MissionPlanner.Controls
             {
                 try
                 {
-                    Console.WriteLine("MainSwitcher dispose " + item.Name);
-                    if (item != null && item.Control != null)
+                    Console.WriteLine("MainSwitcher dispose " + item?.Name);
+                    if (item?.Control != null)
                     {
                         item.Control.Close();
                         item.Control.Dispose();

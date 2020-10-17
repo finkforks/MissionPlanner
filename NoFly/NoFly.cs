@@ -1,14 +1,12 @@
 ﻿using GMap.NET;
 using GMap.NET.WindowsForms;
+using Ionic.Zip;
+using MissionPlanner.Utilities;
+using SharpKml.Dom;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Windows.Forms;
-using Ionic.Zip;
-using MissionPlanner.Utilities;
 
 namespace MissionPlanner.NoFly
 {
@@ -34,7 +32,7 @@ namespace MissionPlanner.NoFly
         {
             var files = Directory.GetFiles(directory, "*.kmz");
 
-            foreach (var file in  files)
+            foreach (var file in files)
             {
                 try
                 {
@@ -51,6 +49,8 @@ namespace MissionPlanner.NoFly
                     {
                         LoadNoFly(kml);
                     }
+
+                    Directory.Delete(outputDirectory, true);
                 }
                 catch
                 {
@@ -100,6 +100,7 @@ namespace MissionPlanner.NoFly
             SharpKml.Dom.Folder folder = Element as SharpKml.Dom.Folder;
             SharpKml.Dom.Polygon polygon = Element as SharpKml.Dom.Polygon;
             SharpKml.Dom.LineString ls = Element as SharpKml.Dom.LineString;
+            MultipleGeometry geom = Element as MultipleGeometry;
 
             if (doc != null)
             {
@@ -147,6 +148,13 @@ namespace MissionPlanner.NoFly
                 }
 
                 kmlpolygonsoverlay.Routes.Add(kmlroute);
+            }
+            else if (geom != null)
+            {
+                foreach (var geometry in geom.Geometry)
+                {
+                    processKML(geometry);
+                }
             }
         }
     }

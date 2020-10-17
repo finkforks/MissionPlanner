@@ -59,7 +59,13 @@ namespace GMap.NET
             {
                label2.Text = "all tiles saved";
             };
-            Invoke(m);
+             try
+             {
+                 Invoke(m);
+             }
+             catch
+             {
+             }
          }
       }
 
@@ -73,7 +79,13 @@ namespace GMap.NET
             {
                label2.Text = "saving tiles...";
             };
-            Invoke(m);
+             try
+             {
+                 Invoke(m);
+             }
+             catch
+             {
+             }
          }
       }
 
@@ -85,7 +97,13 @@ namespace GMap.NET
             {
                label2.Text = left + " tile to save...";
             };
-            Invoke(m);
+             try
+             {
+                 Invoke(m);
+             }
+             catch
+             {
+             }
          }
       }
 
@@ -342,7 +360,7 @@ namespace GMap.NET
          Size = new System.Drawing.Size(size, size);
       }
 
-      public override void OnRender(Graphics g)
+      public override void OnRender(IGraphics g)
       {
          g.FillRectangle(Fill, new System.Drawing.Rectangle(LocalPosition.X, LocalPosition.Y, Size.Width, Size.Height));
       }

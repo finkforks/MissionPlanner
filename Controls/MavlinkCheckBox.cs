@@ -1,9 +1,5 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Windows.Forms;
-using System.Collections;
 
 namespace MissionPlanner.Controls
 {
@@ -29,6 +25,34 @@ namespace MissionPlanner.Controls
             OffValue = 0;
 
             this.Enabled = false;
+        }
+
+        public void setup(double[] OnValue, double[] OffValue, string[] paramname, MAVLink.MAVLinkParamList paramlist,
+            Control enabledisable = null)
+        {
+            int idx = 0;
+            foreach (var s in paramname)
+            {
+                if (paramlist.ContainsKey(s))
+                {
+                    setup(OnValue[idx], OffValue[idx], s, paramlist, enabledisable);
+                    return;
+                }
+                idx++;
+            }
+        }
+
+        public void setup(double OnValue, double OffValue, string[] paramname, MAVLink.MAVLinkParamList paramlist,
+            Control enabledisable = null)
+        {
+            foreach (var s in paramname)
+            {
+                if (paramlist.ContainsKey(s))
+                {
+                    setup(OnValue, OffValue, s, paramlist, enabledisable);
+                    return;
+                }
+            }
         }
 
         public void setup(double OnValue, double OffValue, string paramname, MAVLink.MAVLinkParamList paramlist,
@@ -86,7 +110,7 @@ namespace MissionPlanner.Controls
                 enableControl(true);
                 try
                 {
-                    bool ans = MainV2.comPort.setParam(ParamName, OnValue);
+                    bool ans = MainV2.comPort.setParam((byte)MainV2.comPort.sysidcurrent, (byte)MainV2.comPort.compidcurrent, ParamName, OnValue);
                     if (ans == false)
                         CustomMessageBox.Show(String.Format(Strings.ErrorSetValueFailed, ParamName), Strings.ERROR);
                 }
@@ -100,7 +124,7 @@ namespace MissionPlanner.Controls
                 enableControl(false);
                 try
                 {
-                    bool ans = MainV2.comPort.setParam(ParamName, OffValue);
+                    bool ans = MainV2.comPort.setParam((byte)MainV2.comPort.sysidcurrent, (byte)MainV2.comPort.compidcurrent, ParamName, OffValue);
                     if (ans == false)
                         CustomMessageBox.Show(String.Format(Strings.ErrorSetValueFailed, ParamName), Strings.ERROR);
                 }

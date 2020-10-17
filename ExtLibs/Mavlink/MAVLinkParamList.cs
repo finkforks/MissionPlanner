@@ -1,14 +1,13 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 
 public partial class MAVLink
 {
-    public class MAVLinkParamList: List<MAVLinkParam>
+    public class MAVLinkParamList : List<MAVLinkParam>, INotifyPropertyChanged
     {
-        static object locker = new object();
+        object locker = new object();
 
         public int TotalReported { get; set; }
 
@@ -18,7 +17,7 @@ public partial class MAVLink
         }
 
         public MAVLinkParam this[string name]
-        { 
+        {
             get
             {
                 lock (locker)
@@ -43,13 +42,14 @@ public partial class MAVLink
                         if (item.Name == name)
                         {
                             this[index] = value;
+                            OnPropertyChanged(name);
                             return;
                         }
 
                         index++;
                     }
 
-                    this.Add(value);
+                    base.Add(value);
                 }
             }
         }
@@ -58,12 +58,9 @@ public partial class MAVLink
         {
             get
             {
-                lock (locker)
+                foreach (MAVLinkParam item in this.ToArray())
                 {
-                    foreach (MAVLinkParam item in this)
-                    {
-                        yield return item.Name;
-                    }
+                    yield return item.Name;
                 }
             }
         }
@@ -93,10 +90,7 @@ public partial class MAVLink
 
         public new void Add(MAVLinkParam item)
         {
-            lock (locker)
-            {
-                base.Add(item);
-            }
+            this[item.Name] = item;
         }
 
         public new void AddRange(IEnumerable<MAVLinkParam> collection)
@@ -107,18 +101,22 @@ public partial class MAVLink
             }
         }
 
-        public static implicit operator Hashtable(MAVLinkParamList list)
+        public static implicit operator Dictionary<string, double>(MAVLinkParamList list)
         {
-            lock (locker)
+            var copy = new Dictionary<string, double>();
+            foreach (MAVLinkParam item in list.ToArray())
             {
-                Hashtable copy = new Hashtable();
-                foreach (MAVLinkParam item in list)
-                {
-                    copy[item.Name] = item.Value;
-                }
-
-                return copy;
+                copy[item.Name] = item.Value;
             }
+
+            return copy;
+        }
+
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void OnPropertyChanged([CallerMemberName] string propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
     }
 }

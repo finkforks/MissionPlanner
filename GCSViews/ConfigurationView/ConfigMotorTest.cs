@@ -1,13 +1,13 @@
-﻿using System;
+﻿using MissionPlanner.Controls;
+using MissionPlanner.HIL;
+using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.Windows.Forms;
-using MissionPlanner.Controls;
-using MissionPlanner.HIL;
 
 namespace MissionPlanner.GCSViews.ConfigurationView
 {
-    public partial class ConfigMotorTest : UserControl, IActivate
+    public partial class ConfigMotorTest : MyUserControl, IActivate
     {
         public ConfigMotorTest()
         {
@@ -44,12 +44,12 @@ namespace MissionPlanner.GCSViews.ConfigurationView
             for (var a = 1; a <= motormax; a++)
             {
                 but = new MyButton();
-                but.Text = "Test motor " + (char) ((a - 1) + 'A');
+                but.Text = "Test motor " + (char)((a - 1) + 'A');
                 but.Location = new Point(x, y);
                 but.Click += but_Click;
                 but.Tag = a;
 
-                Controls.Add(but);
+                groupBox1.Controls.Add(but);
 
                 y += 25;
             }
@@ -59,7 +59,7 @@ namespace MissionPlanner.GCSViews.ConfigurationView
             but.Location = new Point(x, y);
             but.Size = new Size(75, 37);
             but.Click += but_TestAll;
-            Controls.Add(but);
+            groupBox1.Controls.Add(but);
 
             y += 39;
 
@@ -68,7 +68,7 @@ namespace MissionPlanner.GCSViews.ConfigurationView
             but.Location = new Point(x, y);
             but.Size = new Size(75, 37);
             but.Click += but_StopAll;
-            Controls.Add(but);
+            groupBox1.Controls.Add(but);
 
             y += 39;
 
@@ -77,14 +77,21 @@ namespace MissionPlanner.GCSViews.ConfigurationView
             but.Location = new Point(x, y);
             but.Size = new Size(75, 37);
             but.Click += but_TestAllSeq;
-            Controls.Add(but);
+            groupBox1.Controls.Add(but);
+
+            Utilities.ThemeManager.ApplyThemeTo(this);
         }
 
         private int get_motormax()
         {
             var motormax = 8;
 
-            var enable = MainV2.comPort.MAV.param.ContainsKey("FRAME") || MainV2.comPort.MAV.param.ContainsKey("Q_FRAME_TYPE");
+            if (MainV2.comPort.MAV.aptype == MAVLink.MAV_TYPE.GROUND_ROVER || MainV2.comPort.MAV.aptype == MAVLink.MAV_TYPE.SURFACE_BOAT)
+            {
+                return 4;
+            }
+
+            var enable = MainV2.comPort.MAV.param.ContainsKey("FRAME") || MainV2.comPort.MAV.param.ContainsKey("Q_FRAME_TYPE") || MainV2.comPort.MAV.param.ContainsKey("FRAME_TYPE");
 
             if (!enable)
             {
@@ -101,25 +108,36 @@ namespace MissionPlanner.GCSViews.ConfigurationView
                 switch (value)
                 {
                     case 0:
+                    case 1:
                         type = MAVLink.MAV_TYPE.QUADROTOR;
                         break;
-                    case 1:
+                    case 2:
+                    case 5:
                         type = MAVLink.MAV_TYPE.HEXAROTOR;
                         break;
-                    case 2:
+                    case 3:
+                    case 4:
                         type = MAVLink.MAV_TYPE.OCTOROTOR;
                         break;
-                    case 3:
-                        type = MAVLink.MAV_TYPE.OCTOROTOR;
+                    case 6:
+                        type = MAVLink.MAV_TYPE.HELICOPTER;
+                        break;
+                    case 7:
+                        type = MAVLink.MAV_TYPE.TRICOPTER;
                         break;
                 }
 
                 frame_type = (int)MainV2.comPort.MAV.param["Q_FRAME_TYPE"].Value;
             }
-            else
+            else if (MainV2.comPort.MAV.param.ContainsKey("FRAME"))
             {
                 type = MainV2.comPort.MAV.aptype;
                 frame_type = (int)MainV2.comPort.MAV.param["FRAME"].Value;
+            }
+            else if (MainV2.comPort.MAV.param.ContainsKey("FRAME_TYPE"))
+            {
+                type = MainV2.comPort.MAV.aptype;
+                frame_type = (int)MainV2.comPort.MAV.param["FRAME_TYPE"].Value;
             }
 
             var motors = new Motor[0];
@@ -152,14 +170,18 @@ namespace MissionPlanner.GCSViews.ConfigurationView
             {
                 motormax = 0;
             }
+            else if (type == MAVLink.MAV_TYPE.DODECAROTOR)
+            {
+                motormax = 12;
+            }
 
             return motormax;
         }
 
         private void but_TestAll(object sender, EventArgs e)
         {
-            int speed = (int) NUM_thr_percent.Value;
-            int time = (int) NUM_duration.Value;
+            int speed = (int)NUM_thr_percent.Value;
+            int time = (int)NUM_duration.Value;
 
             int motormax = this.get_motormax();
             for (int i = 1; i <= motormax; i++)
@@ -171,8 +193,8 @@ namespace MissionPlanner.GCSViews.ConfigurationView
         private void but_TestAllSeq(object sender, EventArgs e)
         {
             int motormax = this.get_motormax();
-            int speed = (int) NUM_thr_percent.Value;
-            int time = (int) NUM_duration.Value;
+            int speed = (int)NUM_thr_percent.Value;
+            int time = (int)NUM_duration.Value;
 
             testMotor(1, speed, time, motormax);
         }
@@ -188,11 +210,11 @@ namespace MissionPlanner.GCSViews.ConfigurationView
 
         private void but_Click(object sender, EventArgs e)
         {
-            int speed = (int) NUM_thr_percent.Value;
-            int time = (int) NUM_duration.Value;
+            int speed = (int)NUM_thr_percent.Value;
+            int time = (int)NUM_duration.Value;
             try
             {
-                var motor = (int) ((MyButton) sender).Tag;
+                var motor = (int)((MyButton)sender).Tag;
                 this.testMotor(motor, speed, time);
             }
             catch (Exception ex)
@@ -201,7 +223,7 @@ namespace MissionPlanner.GCSViews.ConfigurationView
             }
         }
 
-        private void testMotor(int motor, int speed, int time,int motorcount = 0)
+        private void testMotor(int motor, int speed, int time, int motorcount = 0)
         {
             try
             {
@@ -222,12 +244,69 @@ namespace MissionPlanner.GCSViews.ConfigurationView
         {
             try
             {
-                Process.Start("http://copter.ardupilot.com/wiki/connect-escs-and-motors/");
+                Process.Start("https://ardupilot.org/copter/docs/connect-escs-and-motors.html#motor-order-diagrams");
             }
             catch
             {
                 CustomMessageBox.Show("Bad default system association", Strings.ERROR);
             }
+        }
+
+        private async void but_mot_spin_arm_Click(object sender, EventArgs e)
+        {
+            this.Enabled = false;
+
+            if (!MainV2.comPort.MAV.param.ContainsKey("MOT_SPIN_ARM"))
+            {
+                CustomMessageBox.Show("param MOT_SPIN_ARM missing", Strings.ERROR);
+                return;
+            }
+
+            if (NUM_thr_percent.Value < 20)
+            {
+                var value = (int)NUM_thr_percent.Value + 2;
+                if (InputBox.Show(Strings.ChangeThrottle, "Enter arm throttle % (deadzone + 2%)", ref value) == DialogResult.OK)
+                {
+                    await MainV2.comPort.setParamAsync((byte)MainV2.comPort.sysidcurrent,
+                        (byte)MainV2.comPort.compidcurrent, "MOT_SPIN_ARM",
+                        (float)value / 100.0f).ConfigureAwait(true);
+                }
+            }
+            else
+            {
+                CustomMessageBox.Show("Throttle percent above 20, too high", Strings.ERROR);
+            }
+
+            this.Enabled = true;
+        }
+
+        private async void but_mot_spin_min_Click(object sender, EventArgs e)
+        {
+            this.Enabled = false;
+
+            if (!MainV2.comPort.MAV.param.ContainsKey("MOT_SPIN_MIN"))
+            {
+                CustomMessageBox.Show("param MOT_SPIN_MIN missing", Strings.ERROR);
+                return;
+            }
+
+            if (NUM_thr_percent.Value < 20)
+            {
+                var value = (int)MainV2.comPort.MAV.param["MOT_SPIN_MIN"].Value + 3;
+                if (InputBox.Show(Strings.ChangeThrottle, "Enter min spin throttle % (arm min + 3%)", ref value) ==
+                    DialogResult.OK)
+                {
+                    await MainV2.comPort.setParamAsync((byte)MainV2.comPort.sysidcurrent,
+                        (byte)MainV2.comPort.compidcurrent, "MOT_SPIN_MIN",
+                        (float)value/100.0f).ConfigureAwait(true);
+                }
+            }
+            else
+            {
+                CustomMessageBox.Show("Throttle percent above 20, too high", Strings.ERROR);
+            }
+
+            this.Enabled = true;
         }
     }
 }

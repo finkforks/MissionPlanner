@@ -1,3 +1,6 @@
+using AltitudeAngelWings.Extra;
+using GMap.NET;
+using GMap.NET.WindowsForms;
 using System;
 using System.Linq;
 using System.Reactive.Concurrency;
@@ -5,18 +8,12 @@ using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Threading;
 using System.Windows.Forms;
-using AltitudeAngel.IsolatedPlugin.Common.Maps;
-using AltitudeAngelWings;
-using GMap.NET;
-using GMap.NET.WindowsForms;
-using SharpKml.Dom;
 using Feature = GeoJSON.Net.Feature.Feature;
-using Timer = System.Windows.Forms.Timer;
 using Unit = System.Reactive.Unit;
 
 namespace MissionPlanner.Utilities.AltitudeAngel
 {
-    class MapAdapter : IMap, IDisposable
+    internal class MapAdapter : IMap, IDisposable
     {
         public MapAdapter(GMapControl mapControl)
         {
@@ -44,7 +41,104 @@ namespace MissionPlanner.Utilities.AltitudeAngel
                 .ObserveOn(ThreadPoolScheduler.Instance);
 
             mapControl.OnMapDrag += MapControl_OnMapDrag;
-            mapControl.OnPolygonClick += Control_OnPolygonClick;
+            //mapControl.OnPolygonClick += Control_OnPolygonClick;
+
+            mapControl.OnPolygonEnter += MapControl_OnPolygonEnter;
+            mapControl.OnPolygonLeave += MapControl_OnPolygonLeave;
+
+            //mapControl.OnRouteClick += MapControl_OnRouteClick;
+            mapControl.OnRouteEnter += MapControl_OnRouteEnter;
+            mapControl.OnRouteLeave += MapControl_OnRouteLeave;
+        }
+
+        private void MapControl_OnPolygonLeave(GMapPolygon item)
+        {
+            item.Overlay.Markers.Remove(marker);
+            marker = null;
+        }
+
+        private void MapControl_OnPolygonEnter(GMapPolygon item)
+        {
+            item.Overlay.Markers.Clear();
+
+            if (marker != null)
+                item.Overlay.Markers.Remove(marker);
+
+            var point = item.Overlay.Control.PointToClient(Control.MousePosition);
+            var pos = item.Overlay.Control.FromLocalToLatLng(point.X, point.Y);
+
+            marker = new GMapMarkerRect(pos)
+            {
+                ToolTipMode = MarkerTooltipMode.Always,
+                ToolTipText = createMessage(item.Tag),
+                IsHitTestVisible = false
+            };
+            item.Overlay.Markers.Add(marker);
+        }
+
+        GMapMarkerRect marker = null;
+
+        private void MapControl_OnRouteLeave(GMapRoute item)
+        {
+            item.Overlay.Markers.Remove(marker);
+            marker = null;
+        }
+
+        private void MapControl_OnRouteEnter(GMapRoute item)
+        {
+            if (marker != null)
+                item.Overlay.Markers.Remove(marker);
+
+            var point = item.Overlay.Control.PointToClient(Control.MousePosition);
+            var pos = item.Overlay.Control.FromLocalToLatLng(point.X, point.Y);
+
+            marker = new GMapMarkerRect(pos)
+            {
+                ToolTipMode = MarkerTooltipMode.Always,
+                ToolTipText = createMessage(item.Tag),
+                IsHitTestVisible = false
+            };
+            item.Overlay.Markers.Add(marker);
+        }
+
+        private void MapControl_OnRouteClick(GMapRoute item, MouseEventArgs e)
+        {
+            CustomMessageBox.Show(createMessage(item.Tag), "Info", MessageBoxButtons.OK);
+        }
+
+        string createMessage(object item)
+        {
+            if (item is Feature)
+            {
+                var prop = ((Feature)item).Properties;
+
+                var display = prop["display"] as Newtonsoft.Json.Linq.JObject;
+
+                var sections = display["sections"];
+
+                string title;
+                string text;
+
+                if (sections.Count() == 0)
+                {
+                    title = prop["detailedCategory"].ToString();
+                    text = "";
+                }
+                else
+                {
+                    var section1 = sections.Last();
+
+                    var iconURL = section1["iconUrl"].ToString();
+                    title = display["category"].ToString();
+                    text = section1["text"].ToString();
+                }
+
+                var st = String.Format("{0} is categorised as a {1}\n\n{2}", display["title"], title, text);
+
+                return st;
+            }
+
+            return "";
         }
 
         DateTime lastmapdrag = DateTime.MinValue;
@@ -66,15 +160,12 @@ namespace MissionPlanner.Utilities.AltitudeAngel
             {
                 if (item.Tag is Feature)
                 {
-                    var prop = ((Feature) item.Tag).Properties;
-
-                    var st = String.Format("{0} is categorised as {1}", prop["name"], prop["detailedCategory"]);
+                    var st = createMessage(item.Tag);
 
                     CustomMessageBox.Show(st, "Info", MessageBoxButtons.OK);
                 }
             }
         }
-    
 
         public void Dispose()
         {
@@ -86,7 +177,13 @@ namespace MissionPlanner.Utilities.AltitudeAngel
         {
             PointLatLng pointLatLng = default(PointLatLng);
 
-            _context.Send(_ => pointLatLng = _mapControl.Position, null);
+            try
+            {
+                _context.Send(_ => pointLatLng = _mapControl.Position, null);
+            }
+            catch
+            {
+            }
 
             return pointLatLng;
         }
@@ -94,8 +191,17 @@ namespace MissionPlanner.Utilities.AltitudeAngel
         public RectLatLng GetViewArea()
         {
             RectLatLng rectLatLng = default(RectLatLng);
-
-            _context.Send(_ => rectLatLng = _mapControl.ViewArea, null);
+            try
+            {
+                _context.Send(_ => rectLatLng = _mapControl.ViewArea, null);
+            }
+            catch
+            {
+            }
+            if (rectLatLng.WidthLng < 0.03)
+                rectLatLng.Inflate(0, (0.03 - rectLatLng.WidthLng) / 2);
+            if (rectLatLng.HeightLat < 0.03)
+                rectLatLng.Inflate((0.03 - rectLatLng.HeightLat) / 2, 0);
 
             return rectLatLng;
         }
@@ -125,24 +231,30 @@ namespace MissionPlanner.Utilities.AltitudeAngel
         public IOverlay GetOverlay(string name, bool createIfNotExists = false)
         {
             IOverlay result = null;
-            _context.Send(_ =>
+            try
             {
-                GMapOverlay overlay = _mapControl.Overlays.FirstOrDefault(i => i.Id == name);
-
-                if (overlay == null)
+                _context.Send(_ =>
                 {
-                    if (createIfNotExists)
+                    GMapOverlay overlay = _mapControl.Overlays.FirstOrDefault(i => i.Id == name);
+
+                    if (overlay == null)
                     {
-                        AddOverlay(name);
-                        result = GetOverlay(name);
-                        return;
+                        if (createIfNotExists)
+                        {
+                            AddOverlay(name);
+                            result = GetOverlay(name);
+                            return;
+                        }
+
+                        throw new ArgumentException($"Overlay {name} not found.");
                     }
 
-                    throw new ArgumentException($"Overlay {name} not found.");
-                }
-
-                result = new OverlayAdapter(overlay);
-            }, null);
+                    result = new OverlayAdapter(overlay);
+                }, null);
+            }
+            catch
+            {
+            }
 
             return result;
         }
@@ -161,5 +273,10 @@ namespace MissionPlanner.Utilities.AltitudeAngel
         private CompositeDisposable _disposer = new CompositeDisposable();
         private readonly SynchronizationContext _context;
         public IObservable<Unit> MapChanged { get; }
+
+        public void Invalidate()
+        {
+            _mapControl.Invalidate();
+        }
     }
 }

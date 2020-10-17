@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Windows.Forms;
 
 namespace MissionPlanner.Controls
 {
@@ -18,6 +19,7 @@ namespace MissionPlanner.Controls
             : base()
         {
             this.Text = "Map";
+            IgnoreMarkerOnMouseWheel = true;
         }
 
         protected override void OnPaint(System.Windows.Forms.PaintEventArgs e)
@@ -47,11 +49,16 @@ namespace MissionPlanner.Controls
             System.Diagnostics.Debug.WriteLine("map draw time " + (end-start).TotalMilliseconds);
         }
 
+        protected override void WndProc(ref Message m)
+        {
+            base.WndProc(ref m);
+        }
+
         protected override void OnMouseMove(System.Windows.Forms.MouseEventArgs e)
         {
             try
             {
-                var buffer = 5;
+                var buffer = 1;
                 // try prevent alot of cpu usage
                 if (e.X >= lastx - buffer && e.X <= lastx + buffer && e.Y >= lasty - buffer && e.Y <= lasty + buffer)
                     return;
