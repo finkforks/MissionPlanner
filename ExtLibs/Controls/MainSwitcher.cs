@@ -15,14 +15,28 @@ namespace MissionPlanner.Controls
 
         public static event ThemeManager ApplyTheme;
 
+        public delegate void TrackingEventHandler(string page, string title);
+
+        public static event TrackingEventHandler Tracking;
+
         public List<Screen> screens = new List<Screen>();
         public Screen current;
         UserControl MainControl = new UserControl();
 
-        public int Width { get { return MainControl.Width; } }
-        public int Height { get { return MainControl.Height; } }
+        public int Width
+        {
+            get { return MainControl.Width; }
+        }
 
-        public Control.ControlCollection Controls { get { return MainControl.Controls; } }
+        public int Height
+        {
+            get { return MainControl.Height; }
+        }
+
+        public Control.ControlCollection Controls
+        {
+            get { return MainControl.Controls; }
+        }
 
         public MainSwitcher(Control Parent)
         {
@@ -36,7 +50,9 @@ namespace MissionPlanner.Controls
             if (Screen == null)
                 return;
 
-            // add to list
+            // add to list - remove existing
+            if (screens.Any(a => a.Name == Screen.Name))
+                screens.Remove(screens.First(a => a.Name == Screen.Name));
             screens.Add(Screen);
 
             // hide it
@@ -60,11 +76,12 @@ namespace MissionPlanner.Controls
                 {
                     try
                     {
-                        current.Control = (MyUserControl)Activator.CreateInstance(type);
+                        current.Control = (MyUserControl) Activator.CreateInstance(type);
                     }
                     catch (Exception ex)
                     {
-                        throw new Exception("Unable to invoke create control " + current.Name + " of type " + current.Type, ex);
+                        throw new Exception(
+                            "Unable to invoke create control " + current.Name + " of type " + current.Type, ex);
                     }
                 });
             }
@@ -82,7 +99,8 @@ namespace MissionPlanner.Controls
                     }
                     catch (Exception ex)
                     {
-                        throw new Exception("Unable to create control " + current.Name + " of type " + current.Type, ex);
+                        throw new Exception("Unable to create control " + current.Name + " of type " + current.Type,
+                            ex);
                     }
                 }
             }
@@ -103,7 +121,7 @@ namespace MissionPlanner.Controls
 
                 if (current.Control is IDeactivate)
                 {
-                    ((IDeactivate)(current.Control)).Deactivate();
+                    ((IDeactivate) (current.Control)).Deactivate();
                 }
 
                 // check if we need to remove the current control
@@ -123,12 +141,11 @@ namespace MissionPlanner.Controls
             if (name == "")
                 return;
 
+            if (!screens.Any(s => s.Name == name))
+                return;
+
             // find next screen
             Screen nextscreen = screens.Single(s => s.Name == name);
-
-            // screen name dosnt exist
-            if (nextscreen == null)
-                return;
 
             // screen control is null, create it
             if (nextscreen.Control == null || nextscreen.Control.IsDisposed)
@@ -145,11 +162,11 @@ namespace MissionPlanner.Controls
 
             nextscreen.Control.Dock = DockStyle.Fill;
 
-            MissionPlanner.Utilities.Tracking.AddPage(nextscreen.Control.GetType().ToString(), name);
+            Tracking?.Invoke(nextscreen.Control.GetType().ToString(), name);
 
             if (nextscreen.Control is IActivate)
             {
-                ((IActivate)(nextscreen.Control)).Activate();
+                ((IActivate) (nextscreen.Control)).Activate();
             }
 
             if (ApplyTheme != null)
@@ -157,7 +174,7 @@ namespace MissionPlanner.Controls
 
             if (MainControl.InvokeRequired)
             {
-                MainControl.Invoke((MethodInvoker)delegate
+                MainControl.Invoke((MethodInvoker) delegate
                 {
                     MainControl.Controls.Add(nextscreen.Control);
                     nextscreen.Control.ResumeLayout();
@@ -190,7 +207,7 @@ namespace MissionPlanner.Controls
             {
                 get
                 {
-                    if (Control == null) 
+                    if (Control == null)
                         return false;
                     return Control.Visible;
                 }
@@ -198,10 +215,13 @@ namespace MissionPlanner.Controls
                 {
                     try
                     {
+                        Control.SuspendLayout();
                         Control.Visible = value;
+                        Control.ResumeLayout();
                     }
-                    catch
+                    catch (Exception ex)
                     {
+                        Console.WriteLine(ex);
                     }
                 }
             }
@@ -230,21 +250,23 @@ namespace MissionPlanner.Controls
         {
             if (current != null && current.Control != null && current.Control is IDeactivate)
             {
-                ((IDeactivate)(current.Control)).Deactivate();
+                ((IDeactivate) (current.Control)).Deactivate();
             }
 
             foreach (var item in screens)
             {
                 try
                 {
-                    Console.WriteLine("MainSwitcher dispose " + item.Name);
-                    if (item != null && item.Control != null)
+                    Console.WriteLine("MainSwitcher dispose " + item?.Name);
+                    if (item?.Control != null)
                     {
                         item.Control.Close();
                         item.Control.Dispose();
                     }
                 }
-                catch { }
+                catch
+                {
+                }
             }
 
             MainControl.Dispose();

@@ -1,22 +1,32 @@
 using System;
 using System.Threading.Tasks;
-using AltitudeAngelWings.Models;
+using AltitudeAngelWings.Model;
 
 namespace AltitudeAngelWings.Service.Messaging
 {
     public class MessagesService : IMessagesService
     {
-        public MessagesService()
+        private readonly IMessageDisplay _messageDisplay;
+
+        public MessagesService(IMessageDisplay messageDisplay)
         {
-            Messages = new ObservableProperty<Message>(0);
+            _messageDisplay = messageDisplay;
         }
 
-        public ObservableProperty<Message> Messages { get; }
-
-        public Task AddMessageAsync(Message message)
+        public Task AddMessageAsync(Message message) => Task.Factory.StartNew(async () =>
         {
-            Console.WriteLine(message.Content);
-            return Task.Factory.StartNew(() => Messages.Value = message);
-        }
+            try
+            {
+                _messageDisplay.AddMessage(message);
+                do
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(200)).ConfigureAwait(false);
+                } while (!message.HasExpired());
+            }
+            finally
+            {
+                _messageDisplay.RemoveMessage(message);
+            }
+        });
     }
 }

@@ -112,13 +112,13 @@
     <value>2.0</value>
   </resheader>
   <resheader name="reader">
-    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
   <resheader name="writer">
-    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
   <data name="CHK_maprotation.Text" xml:space="preserve">
-    <value>地図は、機体の方向に合わせて回転します。</value>
+    <value>地図は機体の方向に合わせて回転</value>
   </data>
   <data name="CHK_speechaltwarning.Text" xml:space="preserve">
     <value>高度警報</value>
@@ -127,13 +127,13 @@
     <value>HUD</value>
   </data>
   <data name="BUT_videostop.Text" xml:space="preserve">
-    <value>Stop</value>
+    <value>ストップ</value>
   </data>
   <data name="CHK_speechbattery.Text" xml:space="preserve">
     <value>電池警報</value>
   </data>
   <data name="CHK_enablespeech.Text" xml:space="preserve">
-    <value>スピーチ　イネーブル</value>
+    <value>スピーチ有効</value>
   </data>
   <data name="CHK_advancedview.Text" xml:space="preserve">
     <value>高度な表示</value>
@@ -163,10 +163,10 @@
     <value>ログの保存先</value>
   </data>
   <data name="label26.Text" xml:space="preserve">
-    <value>ビデオ　フォーマット</value>
+    <value>ビデオフォーマット</value>
   </data>
   <data name="label103.Text" xml:space="preserve">
-    <value>ポジション</value>
+    <value>位置</value>
   </data>
   <data name="label102.Text" xml:space="preserve">
     <value>姿勢</value>
@@ -175,7 +175,7 @@
     <value>スタート/ストップ Vario</value>
   </data>
   <data name="label1.Text" xml:space="preserve">
-    <value>マップ　フォロー</value>
+    <value>マップフォロー</value>
   </data>
   <data name="label101.Text" xml:space="preserve">
     <value>テレメトリー頻度</value>
@@ -190,19 +190,19 @@
     <value>テーマ</value>
   </data>
   <data name="label5.Text" xml:space="preserve">
-    <value>Vario</value>
+    <value>レイアウト</value>
   </data>
   <data name="label104.Text" xml:space="preserve">
     <value>モード/ステータス</value>
   </data>
   <data name="CHK_hudshow.Text" xml:space="preserve">
-    <value>HUDオーバレイのイネーブル</value>
+    <value>HUDオーバレイ有効</value>
   </data>
   <data name="label108.Text" xml:space="preserve">
     <value>APM リセット</value>
   </data>
   <data name="CHK_loadwponconnect.Text" xml:space="preserve">
-    <value>接続時にウェイポントをロードしますか？</value>
+    <value>接続時にウェイポントを読み込む</value>
   </data>
   <data name="CHK_beta.Text" xml:space="preserve">
     <value>ベータ　アップデート</value>
@@ -217,7 +217,7 @@
     <value>ウェイポイント</value>
   </data>
   <data name="label99.Text" xml:space="preserve">
-    <value>注意：　設定タブには、これらの単位は表示されません。　生データ値です。</value>
+    <value>注意：設定タブには単位は表示されません。</value>
   </data>
   <data name="label92.Text" xml:space="preserve">
     <value>ビデオデバイスの選択</value>
@@ -262,7 +262,7 @@
     <value>Mavlink メッセージのデバッグ</value>
   </data>
   <data name="CHK_resetapmonconnect.Text" xml:space="preserve">
-    <value>USB接続した際に、APMをリセットする</value>
+    <value>USB接続した際に、APMをリセット</value>
   </data>
   <data name="CHK_speechmode.Text" xml:space="preserve">
     <value>モード</value>
@@ -272,5 +272,8 @@
   </data>
   <data name="BUT_videostart.Text" xml:space="preserve">
     <value>スタート</value>
+  </data>
+  <data name="label6.Text" xml:space="preserve">
+    <value>高度の単位</value>
   </data>
 </root>

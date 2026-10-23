@@ -29,17 +29,16 @@
       private void InitializeComponent()
       {
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(ConfigFriendlyParams));
-            this.tableLayoutPanel1 = new System.Windows.Forms.Panel();
+            this.flowLayoutPanel1 = new System.Windows.Forms.FlowLayoutPanel();
             this.BUT_rerequestparams = new MissionPlanner.Controls.MyButton();
             this.BUT_writePIDS = new MissionPlanner.Controls.MyButton();
             this.BUT_Find = new MissionPlanner.Controls.MyButton();
-            this.chk_advview = new System.Windows.Forms.CheckBox();
             this.SuspendLayout();
             // 
-            // tableLayoutPanel1
+            // flowLayoutPanel1
             // 
-            resources.ApplyResources(this.tableLayoutPanel1, "tableLayoutPanel1");
-            this.tableLayoutPanel1.Name = "tableLayoutPanel1";
+            resources.ApplyResources(this.flowLayoutPanel1, "flowLayoutPanel1");
+            this.flowLayoutPanel1.Name = "flowLayoutPanel1";
             // 
             // BUT_rerequestparams
             // 
@@ -60,22 +59,14 @@
             this.BUT_Find.UseVisualStyleBackColor = true;
             this.BUT_Find.Click += new System.EventHandler(this.BUT_Find_Click);
             // 
-            // chk_advview
-            // 
-            resources.ApplyResources(this.chk_advview, "chk_advview");
-            this.chk_advview.Name = "chk_advview";
-            this.chk_advview.UseVisualStyleBackColor = true;
-            this.chk_advview.CheckedChanged += new System.EventHandler(this.chk_advview_CheckedChanged);
-            // 
             // ConfigFriendlyParams
             // 
             resources.ApplyResources(this, "$this");
-            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.Controls.Add(this.chk_advview);
+            
             this.Controls.Add(this.BUT_Find);
             this.Controls.Add(this.BUT_rerequestparams);
             this.Controls.Add(this.BUT_writePIDS);
-            this.Controls.Add(this.tableLayoutPanel1);
+            this.Controls.Add(this.flowLayoutPanel1);
             this.Name = "ConfigFriendlyParams";
             this.ResumeLayout(false);
             this.PerformLayout();
@@ -84,10 +75,9 @@
 
       #endregion
 
-      private System.Windows.Forms.Panel tableLayoutPanel1;
+      private System.Windows.Forms.FlowLayoutPanel flowLayoutPanel1;
       private Controls.MyButton BUT_rerequestparams;
       private Controls.MyButton BUT_writePIDS;
       private Controls.MyButton BUT_Find;
-      private System.Windows.Forms.CheckBox chk_advview;
    }
 }

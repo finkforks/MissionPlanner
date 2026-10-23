@@ -10,7 +10,7 @@ using System.Windows.Forms;
 
 namespace MissionPlanner.Controls
 {
-    public partial class RangeControl : UserControl, IDynamicParameterControl
+    public partial class RangeControl : MyUserControl, IDynamicParameterControl
     {
         #region Properties
 
@@ -22,22 +22,9 @@ namespace MissionPlanner.Controls
             set { numericUpDown1 = value; }
         }
 
-        public string DescriptionText
-        {
-            get { return label1.Text; }
-            set
-            {
-                //label1.MaximumSize = new Size(this.Width - 30, 0);
-                label1.Text = value;
-                //this.Height += label1.Height;
-            }
-        }
+        public string DescriptionText;
 
-        public string LabelText
-        {
-            get { return myLabel1.Text; }
-            set { myLabel1.Text = value; }
-        }
+        public string LabelText;
 
         public TrackBar TrackBarControl
         {
@@ -124,14 +111,27 @@ namespace MissionPlanner.Controls
         {
             InitializeComponent();
             DisplayScale = 1;
-        }
 
+            // disable the mouse wheel
+            trackBar1.MouseWheel +=
+                delegate (object sender, MouseEventArgs args) { ((HandledMouseEventArgs)args).Handled = true; };
+        }
 
         public RangeControl(string param, String Desc, string Label, float increment, float Displayscale, float minrange,
             float maxrange, string value)
         {
             InitializeComponent();
+            setup(param, Desc, Label, increment, Displayscale, minrange, maxrange, value);
+        }
+
+        public void setup(string param, string Desc, string Label, float increment, float Displayscale, float minrange,
+            float maxrange, string value)
+        {
             this.DisplayScale = Displayscale;
+
+            // disable the mouse wheel
+            trackBar1.MouseWheel +=
+                delegate(object sender, MouseEventArgs args) { ((HandledMouseEventArgs) args).Handled = true; };
 
             Name = param;
             Increment = increment;
@@ -142,11 +142,40 @@ namespace MissionPlanner.Controls
             float delta = maxrange - minrange;
 
             this.Value = value;
+
+            AttachEvents();
         }
 
         #endregion
 
+        Font FontLabel = new System.Drawing.Font("Microsoft Sans Serif", 9.75F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+
+
         #region Methods
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            if (e.ClipRectangle.IsEmpty)
+                return;
+            // this is to improve first render time when not onscreen.
+            if (!numericUpDown1.Visible)
+                numericUpDown1.Visible = true;
+            base.OnPaint(e);
+
+            e.Graphics.DrawString(LabelText, FontLabel, new SolidBrush(this.Parent.ForeColor), 3, 0);
+
+            e.Graphics.DrawString(DescriptionText, this.Font, new SolidBrush(this.Parent.ForeColor),
+                new RectangleF(3, 15, this.Width, 39));
+            /*
+            e.Graphics.DrawString(LBL_min, this.Font, new SolidBrush(this.Parent.ForeColor),
+                new RectangleF(trackBar1.Left, trackBar1.Bottom - this.Font.Height, 100, this.Font.Height));
+
+            var size = e.Graphics.MeasureString(LBL_max, this.Font);
+            e.Graphics.DrawString(LBL_max, this.Font, new SolidBrush(this.Parent.ForeColor),
+                new RectangleF(trackBar1.Right - size.Width, trackBar1.Bottom - this.Font.Height, size.Width,
+                    this.Font.Height));
+            */
+        }
 
         public void AttachEvents()
         {
@@ -176,9 +205,13 @@ namespace MissionPlanner.Controls
                 trackBar1.Value =
                     (int) map(numericUpDown1.Value, numericUpDown1.Minimum, numericUpDown1.Maximum, 0, 1000);
 
-            // if the increment is 1, its most likerly a int on the ap, so treat it as such
-            if (Increment == 1.0)
-                numericUpDown1.Value = (int) (numericUpDown1.Value);
+            // if the increment is divisible by one, always round to an int
+            if ((Increment % 1) == 0)
+            {
+                var round = Math.Round(numericUpDown1.Value, 0);
+                if(round > numericUpDown1.Minimum)
+                    numericUpDown1.Value = (int) round;
+            }
 
             numericUpDown1.BackColor = Color.Green;
 

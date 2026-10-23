@@ -1,10 +1,6 @@
-﻿using System;
+﻿using MissionPlanner.Utilities;
+using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Linq;
-using System.Text;
 using System.Windows.Forms;
 
 namespace MissionPlanner.Joystick
@@ -19,16 +15,24 @@ namespace MissionPlanner.Joystick
 
             this.Tag = name;
 
-            comboBox1.ValueMember = "Key";
-            comboBox1.DisplayMember = "Value";
-            comboBox1.DataSource = Utilities.ParameterMetaDataRepository.GetParameterOptionsInt("MNT_MODE",
-                MainV2.comPort.MAV.cs.firmware.ToString());
+            var mnt_mode_paramnames = new List<string> { "MNT1_DEFLT_MODE", "MNT_DEFLT_MODE", "MNT_MODE" };
+            foreach (var paramname in mnt_mode_paramnames)
+            {
+                var item = ParameterMetaDataRepository.GetParameterOptionsInt(paramname, MainV2.comPort.MAV.cs.firmware.ToString());
+                if (item.Count > 0)
+                {
+                    comboBox1.DataSource = item;
+                    comboBox1.DisplayMember = "Value";
+                    comboBox1.ValueMember = "Key";
+                    break;
+                }
+            }
 
             this.comboBox1.SelectedIndexChanged += new System.EventHandler(this.comboBox1_SelectedIndexChanged);
 
             var config = MainV2.joystick.getButton(int.Parse(name));
 
-            comboBox1.SelectedValue = (int) config.p1;
+            comboBox1.SelectedValue = (int)config.p1;
         }
 
         private void comboBox1_SelectedIndexChanged(object sender, EventArgs e)
@@ -40,8 +44,8 @@ namespace MissionPlanner.Joystick
             var config = MainV2.joystick.getButton(name);
 
             // change what we modified
-            config.function = Joystick.buttonfunction.Mount_Mode;
-            config.p1 = (int) comboBox1.SelectedValue;
+            config.function = buttonfunction.Mount_Mode;
+            config.p1 = (int)comboBox1.SelectedValue;
 
             // update entry
             MainV2.joystick.setButton(name, config);

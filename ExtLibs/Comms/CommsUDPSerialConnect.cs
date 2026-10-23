@@ -1,80 +1,128 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Reflection;
-using System.Text;
-using System.IO.Ports;
-using System.Threading;
-using System.Net; // dns, ip address
-using System.Net.Sockets; // tcplistner
-using log4net;
 using System.IO;
-using MissionPlanner.Controls;
+using System.Linq;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using log4net;
+
+// dns, ip address
+// tcplistner
 
 namespace MissionPlanner.Comms
 {
-    public class UdpSerialConnect : CommsBase,  ICommsSerial, IDisposable
+    public class UdpSerialConnect : CommsBase, ICommsSerial, IDisposable
     {
-        private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILog log = LogManager.GetLogger(typeof(UdpSerialConnect));
+        /// <summary>
+        /// set hostEndPoint as well, if injecting
+        /// </summary>
         public UdpClient client = new UdpClient();
-        IPEndPoint RemoteIpEndPoint = new IPEndPoint(IPAddress.Any, 0);
-        byte[] rbuffer = new byte[0];
-        int rbufferread = 0;
+        private MemoryStream rbuffer = new MemoryStream();
+        public IPEndPoint RemoteIpEndPoint = new IPEndPoint(IPAddress.Any, 0);
 
-        int retrys = 3;
+        private int retrys = 3;
+        public IPEndPoint hostEndPoint;
 
-        public int WriteBufferSize { get; set; }
-        public int WriteTimeout { get; set; }
-        public bool RtsEnable { get; set; }
-        public Stream BaseStream { get { return this.BaseStream; } }
+        public string ConfigRef { get; set; } = "";
 
         public UdpSerialConnect()
         {
             Port = "14550";
+            ReadTimeout = 500;
         }
+
+        public string Port { get; set; }
+
+        public int WriteBufferSize { get; set; }
+        public int WriteTimeout { get; set; }
+        public bool RtsEnable { get; set; }
+        public Stream BaseStream => Stream.Null;
 
         public void toggleDTR()
         {
         }
 
-        public string Port { get; set; }
-
         public int ReadTimeout
         {
-            get;// { return client.ReceiveTimeout; }
-            set;// { client.ReceiveTimeout = value; }
+            get; // { return client.ReceiveTimeout; }
+            set; // { client.ReceiveTimeout = value; }
         }
 
-        public int ReadBufferSize {get;set;}
+        public int ReadBufferSize { get; set; }
 
         public int BaudRate { get; set; }
-        public StopBits StopBits { get; set; }
-        public  Parity Parity { get; set; }
-        public  int DataBits { get; set; }
 
-        public string PortName {
-            get { return "UDPCl" + Port; }
+        public int DataBits { get; set; }
+
+        public string PortName
+        {
+            get => "UDPCl" + Port;
             set { }
         }
 
-        public int BytesToRead
+        public int BytesToRead => (int)(client.Available + rbuffer.Length - rbuffer.Position);
+
+        public int BytesToWrite => 0;
+
+        public bool IsOpen { get; set; }
+
+        public bool DtrEnable { get; set; }
+
+        public void Open(string host, string port)
         {
-            get { return client.Available + rbuffer.Length - rbufferread; }
-        }
+            Port = port;
 
-        public int BytesToWrite { get { return 0; } }
+            OnSettings("UDP_port" + ConfigRef, Port, true);
+            OnSettings("UDP_host" + ConfigRef, host, true);
 
-        public bool IsOpen { get { try { return client.Client.Connected; } catch { return false; } } }
+            IPAddress addr;
 
-        public bool DtrEnable
-        {
-            get;
-            set;
+            if (IPAddress.TryParse(host, out addr))
+            {
+                hostEndPoint = new IPEndPoint(addr, int.Parse(Port));
+            }
+            else
+            {
+                hostEndPoint = new IPEndPoint(Dns.GetHostEntry(host).AddressList.First(), int.Parse(Port));
+            }
+
+            if (IsInRange("224.0.0.0", "239.255.255.255", hostEndPoint.Address.ToString()))
+            {
+                log.Info($"UdpSerialConnect bind to port {Port}");
+                client = new UdpClient(int.Parse(Port), hostEndPoint.AddressFamily);
+
+                IsOpen = true;
+
+                Task.Run(() => {
+                    while (IsOpen)
+                    {
+                        log.Info($"UdpSerialConnect join multicast group {host}");
+                        try
+                        {
+                            client.JoinMulticastGroup(IPAddress.Parse(host));
+                        } catch { return; }
+
+                        Thread.Sleep(30 * 1000);
+                    }
+                });
+                log.Info($"UdpSerialConnect default endpoint {hostEndPoint}");
+            }
+            else
+            {
+                client = new UdpClient(hostEndPoint.AddressFamily);
+            }
+
+            IsOpen = true;
+
+            VerifyConnected();
         }
 
         public void Open()
         {
-            if (client.Client.Connected)
+            if (IsOpen)
             {
                 log.Warn("UdpSerialConnect socket already open");
                 return;
@@ -82,224 +130,225 @@ namespace MissionPlanner.Comms
 
             log.Info("UDP Open");
 
-            string dest = Port;
-            string host = "127.0.0.1";
+            var dest = Port;
+            var host = "127.0.0.1";
 
-            dest = OnSettings("UDP_port", dest);
+            dest = OnSettings("UDP_port" + ConfigRef, dest);
 
-            host = OnSettings("UDP_host", host);
+            host = OnSettings("UDP_host" + ConfigRef, host);
 
             //if (!MainV2.MONO)
             {
-                if (System.Windows.Forms.DialogResult.Cancel == InputBox.Show("remote host", "Enter host name/ip (ensure remote end is already started)", ref host))
-                {
+                if (inputboxreturn.Cancel == OnInputBoxShow("remote host",
+                        "Enter host name/ip (ensure remote end is already started)", ref host))
                     throw new Exception("Canceled by request");
-                }
-                if (System.Windows.Forms.DialogResult.Cancel == InputBox.Show("remote Port", "Enter remote port", ref dest))
-                {
+                if (inputboxreturn.Cancel == OnInputBoxShow("remote Port", "Enter remote port", ref dest))
                     throw new Exception("Canceled by request");
-                }
             }
 
-            Port = dest;
-
-            OnSettings("UDP_port", Port, true);
-            OnSettings("UDP_host", host, true);
-
-            client = new UdpClient(host, int.Parse(Port));
-
-            client.Connect(host, int.Parse(Port));
-
-            VerifyConnected();
-
-            return;
+            Open(host, dest);
         }
 
-        void VerifyConnected()
+        public static bool IsInRange(string startIpAddr, string endIpAddr, string address)
         {
-            if (!IsOpen)
-            {
-                try
-                {
-                    client.Close();
-                }
-                catch { }
+            long ipStart = BitConverter.ToInt32(IPAddress.Parse(startIpAddr).GetAddressBytes().Reverse().ToArray(), 0);
 
-                // this should only happen if we have established a connection in the first place
-                if (client != null && retrys > 0)
-                {
-                    log.Info("udp reconnect");
-                    client.Connect(OnSettings("UDP_host", ""), int.Parse(OnSettings("UDP_port", "")));
-                    retrys--;
-                }
+            long ipEnd = BitConverter.ToInt32(IPAddress.Parse(endIpAddr).GetAddressBytes().Reverse().ToArray(), 0);
 
-                throw new Exception("The UdpSerialConnect is closed");
-            }
+            long ip = BitConverter.ToInt32(IPAddress.Parse(address).GetAddressBytes().Reverse().ToArray(), 0);
+
+            return ip >= ipStart && ip <= ipEnd;
         }
 
         public int Read(byte[] readto, int offset, int length)
         {
             VerifyConnected();
-            try
+            if (length < 1) return 0;
+
+            var deadline = DateTime.Now.AddMilliseconds(ReadTimeout);
+
+            lock (rbuffer)
             {
-                if (length < 1) { return 0; }
+                if (rbuffer.Position == rbuffer.Length)
+                    rbuffer.SetLength(0);
 
-                // check if we are at the end of our current allocation
-                if (rbufferread == rbuffer.Length)
+                var position = rbuffer.Position;
+
+                while ((rbuffer.Length - rbuffer.Position) < length && DateTime.Now < deadline)
                 {
-                    DateTime deadline = DateTime.Now.AddMilliseconds(this.ReadTimeout);
-
-                    MemoryStream r = new MemoryStream();
-                    do
+                    // read more
+                    while (client.Available > 0 && (rbuffer.Length - rbuffer.Position) < length)
                     {
-                        // read more
-                        while (client.Available > 0 && r.Length < (1024 * 1024))
-                        {
-                            Byte[] b = client.Receive(ref RemoteIpEndPoint);
-                            r.Write(b, 0, b.Length);
-                        }
-                        // copy mem stream to byte array.
-                        rbuffer = r.ToArray();
-                        // reset head.
-                        rbufferread = 0;
-                    } while (rbuffer.Length < length && DateTime.Now < deadline);
+                        var currentRemoteIpEndPoint = new IPEndPoint(IPAddress.Any, 0);
+                        // assumes the udp packets are mavlink aligned, if we are receiving from more than one source
+                        var b = client.Receive(ref currentRemoteIpEndPoint);
+                        rbuffer.Seek(0, SeekOrigin.End);
+                        rbuffer.Write(b, 0, b.Length);
+                        rbuffer.Seek(position, SeekOrigin.Begin);
+
+                        RemoteIpEndPoint = currentRemoteIpEndPoint;
+                    }
+
+                    Thread.Yield();
                 }
 
                 // prevent read past end of array
-                if ((rbuffer.Length - rbufferread) < length)
-                {
-                    length = (rbuffer.Length - rbufferread);
-                }
+                if (rbuffer.Length - rbuffer.Position < length)
+                    length = (int)(rbuffer.Length - rbuffer.Position);
 
-                Array.Copy(rbuffer, rbufferread, readto, offset, length);
-
-                rbufferread += length;
-
-                return length;
+                return rbuffer.Read(readto, offset, length);
             }
-            catch { throw; }
         }
 
-        public  int ReadByte()
+        public int ReadByte()
         {
             VerifyConnected();
-            int count = 0;
-            while (this.BytesToRead == 0)
+            var count = 0;
+            while (BytesToRead == 0)
             {
-                System.Threading.Thread.Sleep(1);
+                Thread.Sleep(1);
                 if (count > ReadTimeout)
                     throw new Exception("UdpSerialConnect Timeout on read");
                 count++;
             }
-            byte[] buffer = new byte[1];
+
+            var buffer = new byte[1];
             Read(buffer, 0, 1);
             return buffer[0];
         }
 
-        public  int ReadChar()
+        public int ReadChar()
         {
             return ReadByte();
         }
 
-        public  string ReadExisting() 
+        public string ReadExisting()
         {
             VerifyConnected();
-            byte[] data = new byte[client.Available];
+            var data = new byte[client.Available];
             if (data.Length > 0)
                 Read(data, 0, data.Length);
 
-            string line = Encoding.ASCII.GetString(data, 0, data.Length);
+            var line = Encoding.ASCII.GetString(data, 0, data.Length);
 
             return line;
         }
 
-        public  void WriteLine(string line)
+        public void WriteLine(string line)
         {
             VerifyConnected();
             line = line + "\n";
             Write(line);
         }
 
-        public  void Write(string line)
+        public void Write(string line)
         {
             VerifyConnected();
-            byte[] data = new System.Text.ASCIIEncoding().GetBytes(line);
+            var data = ASCIIEncoding.UTF8.GetBytes(line);
             Write(data, 0, data.Length);
         }
 
-        public  void Write(byte[] write, int offset, int length)
+        public void Write(byte[] write, int offset, int length)
         {
             VerifyConnected();
             try
             {
-                client.Client.Send(write, length,SocketFlags.None);
+                client.Client.SendTo(write, length, SocketFlags.None, hostEndPoint);
             }
-            catch { }//throw new Exception("Comport / Socket Closed"); }
+            catch
+            {
+            } //throw new Exception("Comport / Socket Closed"); }
         }
 
-        public  void DiscardInBuffer()
+        public void DiscardInBuffer()
         {
             VerifyConnected();
-            int size = (int)client.Available;
-            byte[] crap = new byte[size];
-            log.InfoFormat("UdpSerialConnect DiscardInBuffer {0}",size);
+            var size = client.Available;
+            var crap = new byte[size];
+            log.InfoFormat("UdpSerialConnect DiscardInBuffer {0}", size);
             Read(crap, 0, size);
         }
 
-        public  string ReadLine() {
-            byte[] temp = new byte[4000];
-            int count = 0;
-            int timeout = 0;
+        public string ReadLine()
+        {
+            var temp = new byte[4000];
+            var count = 0;
+            var timeout = 0;
 
             while (timeout <= 100)
             {
-                if (!this.IsOpen) { break; }
-                if (this.BytesToRead > 0)
+                if (!IsOpen) break;
+                if (BytesToRead > 0)
                 {
-                    byte letter = (byte)this.ReadByte();
+                    var letter = (byte) ReadByte();
 
                     temp[count] = letter;
 
                     if (letter == '\n') // normal line
-                    {
                         break;
-                    }
-
 
                     count++;
                     if (count == temp.Length)
                         break;
                     timeout = 0;
-                } else {
+                }
+                else
+                {
                     timeout++;
-                    System.Threading.Thread.Sleep(5);
+                    Thread.Sleep(5);
                 }
             }
 
-            Array.Resize<byte>(ref temp, count + 1);
+            Array.Resize(ref temp, count + 1);
 
             return Encoding.ASCII.GetString(temp, 0, temp.Length);
         }
 
         public void Close()
         {
+            IsOpen = false;
+
+            try
+            {
+                if (hostEndPoint != null)
+                    client.DropMulticastGroup(hostEndPoint.Address);
+            }
+            catch
+            {
+            }
+
             try
             {
                 if (client.Client != null && client.Client.Connected)
                 {
-                    client.Client.Close();
-                    client.Close();
+                    client.Client.Dispose();
+                    client.Dispose();
                 }
             }
-            catch { }
+            catch
+            {
+            }
 
             try
             {
-                client.Close();
+                client.Dispose();
             }
-            catch { }
+            catch
+            {
+            }
 
             client = new UdpClient();
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        private void VerifyConnected()
+        {
+
         }
 
         protected virtual void Dispose(bool disposing)
@@ -307,16 +356,11 @@ namespace MissionPlanner.Comms
             if (disposing)
             {
                 // dispose managed resources
-                this.Close();
+                Close();
                 client = null;
             }
-            // free native resources
-        }
 
-        public void Dispose()
-        {
-            Dispose(true);
-            GC.SuppressFinalize(this);
+            // free native resources
         }
     }
 }

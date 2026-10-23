@@ -176,7 +176,6 @@
             // LogDownloadMavLink
             // 
             resources.ApplyResources(this, "$this");
-            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.Controls.Add(this.tableLayoutPanel1);
             this.Name = "LogDownloadMavLink";
             this.Load += new System.EventHandler(this.Log_Load);

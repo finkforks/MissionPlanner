@@ -8,6 +8,10 @@ using System.Net.Sockets;
 using System.Text;
 using log4net;
 using System.Threading;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using static MissionPlanner.Utilities.rtcm3;
+using System.Diagnostics;
 
 namespace MissionPlanner.Utilities
 {
@@ -18,24 +22,64 @@ namespace MissionPlanner.Utilities
         //http://adsb.tc.faa.gov/WG3_Meetings/Meeting9/1090-WP-9-14.pdf
         //*8D75804B580FF2CF7E9BA6F701D0
         //*8D75804B580FF6B283EB7A157117
+        //https://www.adsbexchange.com/data/
+        //https://public-api.adsbexchange.com/VirtualRadar/AircraftList.json?lat=33.433638&lng=-112.008113&fDstL=0&fDstU=100
 
         private static readonly ILog log =        LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         /// <summary>
         /// When a plane position has been updated. you will need to age your own entries
         /// </summary>
-        public static event EventHandler UpdatePlanePosition;
+        public static event EventHandler<MissionPlanner.Utilities.adsb.PointLatLngAltHdg> UpdatePlanePosition;
+
+        public static PointLatLngAlt CurrentPosition = PointLatLngAlt.Zero;
 
         static bool run = false;
         static Thread thisthread;
 
+        /// <summary>
+        /// The server to connect to for ADS-B data. If this is set to a URL, the API will be used, otherwise if it's an IP or hostname, a direct connection will be attempted.
+        /// </summary>
         public static string server = "";
-        public static int serverport = 0;  
+        /// <summary>
+        /// The port to connect to for ADS-B data. If server is a URL, this is ignored.
+        /// </summary>
+        public static int serverport = 0;
+        /// <summary>
+        /// Radius in nm to request planes from the API
+        /// </summary>
+        private static int httpRequestRadius = 100;
+
+        /// <summary>
+        /// Multiplication constant to convert knots to cm/s
+        /// </summary>
+        private const double KNOTS_TO_CMS = 51.444;
+        /// <summary>
+        /// Multiplication constant to convert feet to meters
+        /// </summary>
+        private const double FEET_TO_METERS = 1.0d / 3.28d;
+        /// <summary>
+        /// Multiplication constant to convert feet/mim to cm/s
+        /// </summary>
+        private const double FTM_TO_CMS = 1.0d / 1.968d;
+        /// <summary>
+        /// Timeout in milliseconds for ADS-B connections to default endpoints.
+        /// These are all localhost, so we can be pretty short.
+        /// </summary>
+        private const int CONNECT_TIMEOUT_MILLISECONDS = 25;
+
+        /// <summary>
+        /// Loop delay in milliseconds for ADS-B connections to HTTP API endpoints.
+        /// </summary>
+        private const int API_LOOP_DELAY_MILLISECONDS = 1000;
+
+        /// <summary>
+        /// Maximum loop delay in milliseconds for ADS-B connections to HTTP API endpoints.
+        /// </summary>
+        private const int API_LOOP_DELAY_MAX_MILLISECONDS = 10000;
 
         public adsb()
         {
-            log.Info("adsb ctor");
-
             thisthread = new Thread(TryConnect);
 
             thisthread.Name = "ADSB reader thread";
@@ -52,9 +96,11 @@ namespace MissionPlanner.Utilities
 
             if (thisthread != null)
             {
-                thisthread.Abort();
-                thisthread.Join();
-                thisthread = null;
+                try { 
+                    thisthread.Abort();
+                    thisthread.Join();
+                    thisthread = null;
+                } catch { }
             }
 
             log.Info("adsb stopped");
@@ -66,11 +112,10 @@ namespace MissionPlanner.Utilities
 
             while (run)
             {
-                log.Info("adsb connect loop");
-                //custom
                 try
                 {
-                    if (!String.IsNullOrEmpty(server))
+                    // if we have a server string that's not an HTTP(S) URL, try to connect to it
+                    if (!String.IsNullOrEmpty(server) && !server.StartsWith("http", StringComparison.InvariantCultureIgnoreCase))
                     {
                         using (TcpClient cl = new TcpClient())
                         {
@@ -84,17 +129,108 @@ namespace MissionPlanner.Utilities
                 }
                 catch (Exception ex) { log.Error(ex); }
 
+                // HTTP API
+                try
+                {
+                    if (!String.IsNullOrEmpty(server) && server.StartsWith("http", StringComparison.InvariantCultureIgnoreCase) && CurrentPosition != PointLatLngAlt.Zero)
+                    {
+                        // ADSB Exchange API format - see https://api.adsb.lol/docs
+                        string url = "{0}/v2/point/{1}/{2}/{3}";
+                        var delay = API_LOOP_DELAY_MILLISECONDS;
+
+                        while (true)
+                        {
+                            // Store start time
+                            var timer = Stopwatch.StartNew();
+
+                            string formattedUrl = string.Format(CultureInfo.InvariantCulture, url, server, CurrentPosition.Lat, CurrentPosition.Lng, httpRequestRadius);
+                            var t = Download.GetAsyncWithStatus(formattedUrl);
+                            t.Wait();
+
+                            // Check for long running requests
+                            if (timer.ElapsedMilliseconds > 5000)
+                            {
+                                log.Warn("Long running request: " + formattedUrl + " took " + timer.ElapsedMilliseconds + "ms");
+                            }
+
+                            if (!t.IsFaulted && t.Result.status == System.Net.HttpStatusCode.OK)
+                            {
+                                var result = JsonConvert.DeserializeObject<RootObject>(t.Result.content);
+
+                                // Increase range if we don't see many planes
+                                if (result.ac.Count < 10)
+                                    httpRequestRadius = Math.Min(httpRequestRadius + 10, 250);
+
+                                foreach (var ac in result.ac)
+                                {
+                                    // The API sometimes sets this value to either the string "ground" or a JSON Number. This handles that.
+                                    int alt = 0;
+                                    if (ac.alt_baro is long intValue)
+                                    {
+                                        alt = (int)intValue;
+                                    }
+                                    PointLatLngAltHdg plane = new PointLatLngAltHdg(ac.lat,
+                                        ac.lon,
+                                        alt * FEET_TO_METERS,
+                                        (float)ac.track,
+                                        ac.gs * KNOTS_TO_CMS,
+                                        ac.hex.Trim().ToUpper(),
+                                        DateTime.Now)
+                                    {
+                                        VerticalSpeed = ac.baro_rate * FTM_TO_CMS,
+                                        CallSign = (ac.flight ?? "").Trim().ToUpper(),
+                                        Squawk = Convert.ToUInt16(ac.squawk, 16) // Convert the hex value back to a raw uint16
+                                    };
+
+                                    UpdatePlanePosition(this, plane);
+                                }
+                            }
+                            // Check HTTP response code for rate limiting
+                            if (!t.IsFaulted && (int)t.Result.status == 429)
+                            {
+                                delay = Math.Min(delay * 2, API_LOOP_DELAY_MAX_MILLISECONDS);
+                                log.Info("Rate limited, increasing delay to " + delay + "ms");
+                            }
+                            else
+                            {
+                                // Check HTTP response code for bad requests, etc.
+                                if (!t.IsFaulted && (int)t.Result.status != 200)
+                                {
+                                    delay = Math.Min(delay * 2, API_LOOP_DELAY_MAX_MILLISECONDS);
+                                    log.Warn("HTTP request to " + formattedUrl + " failed: " + t.Result.status + " " + t.Result.content);
+                                }
+                            }
+
+                            // Sleep for the remainder of the loop delay
+                            var elapsed = timer.ElapsedMilliseconds;
+                            if (elapsed < delay)
+                            {
+                                Thread.Sleep(delay - (int)elapsed);
+                            }
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    log.Warn(e);
+                }
+
                 // dump1090 sbs
                 try
                 {
                     using (TcpClient cl = new TcpClient())
                     {
-
-                        cl.Connect(System.Net.IPAddress.Loopback, 30003);
-
-                        log.Info("Connected loopback:30003");
-
-                        ReadMessage(cl.GetStream());
+                        var result = cl.BeginConnect(System.Net.IPAddress.Loopback, 30003, null, null);
+                        result.AsyncWaitHandle.WaitOne(CONNECT_TIMEOUT_MILLISECONDS);
+                        if (cl.Connected)
+                        {
+                            log.Info("Connected loopback:30003");
+                            ReadMessage(cl.GetStream());
+                        }
+                        else
+                        {
+                            cl.Close();
+                        }
                     }
                 }
                 catch (Exception) {  }
@@ -104,12 +240,17 @@ namespace MissionPlanner.Utilities
                 {
                     using (TcpClient cl = new TcpClient())
                     {
-
-                        cl.Connect(System.Net.IPAddress.Loopback, 30002);
-
-                        log.Info("Connected loopback:30002");
-
-                        ReadMessage(cl.GetStream());
+                        var result = cl.BeginConnect(System.Net.IPAddress.Loopback, 30002, null, null);
+                        result.AsyncWaitHandle.WaitOne(CONNECT_TIMEOUT_MILLISECONDS);
+                        if (cl.Connected)
+                        {
+                            log.Info("Connected loopback:30002");
+                            ReadMessage(cl.GetStream());
+                        }
+                        else
+                        {
+                            cl.Close();
+                        }
                     }
                 }
                 catch (Exception) {  }
@@ -120,12 +261,17 @@ namespace MissionPlanner.Utilities
                 {
                     using (TcpClient cl = new TcpClient())
                     {
-
-                        cl.Connect(System.Net.IPAddress.Loopback, 31004);
-
-                        log.Info("Connected loopback:31004");
-
-                        ReadMessage(cl.GetStream());
+                        var result = cl.BeginConnect(System.Net.IPAddress.Loopback, 31004, null, null);
+                        result.AsyncWaitHandle.WaitOne(CONNECT_TIMEOUT_MILLISECONDS);
+                        if (cl.Connected)
+                        {
+                            log.Info("Connected loopback:31004");
+                            ReadMessage(cl.GetStream());
+                        }
+                        else
+                        {
+                            cl.Close();
+                        }
                     }
                 }
                 catch (Exception) { }
@@ -135,12 +281,17 @@ namespace MissionPlanner.Utilities
                 {
                     using (TcpClient cl = new TcpClient())
                     {
-
-                        cl.Connect(System.Net.IPAddress.Loopback, 31001);
-
-                        log.Info("Connected loopback:31001");
-
-                        ReadMessage(cl.GetStream());
+                        var result = cl.BeginConnect(System.Net.IPAddress.Loopback, 31001, null, null);
+                        result.AsyncWaitHandle.WaitOne(CONNECT_TIMEOUT_MILLISECONDS);
+                        if (cl.Connected)
+                        {
+                            log.Info("Connected loopback:31001");
+                            ReadMessage(cl.GetStream());
+                        }
+                        else
+                        {
+                            cl.Close();
+                        }
                     }
                 }
                 catch (Exception) {  }
@@ -151,24 +302,88 @@ namespace MissionPlanner.Utilities
                 {
                     using (TcpClient cl = new TcpClient())
                     {
-
-                        cl.Connect(System.Net.IPAddress.Loopback, 47806);
-
-                        log.Info("Connected loopback:47806");
-
-                        ReadMessage(cl.GetStream());
+                        var result = cl.BeginConnect(System.Net.IPAddress.Loopback, 47806, null, null);
+                        result.AsyncWaitHandle.WaitOne(CONNECT_TIMEOUT_MILLISECONDS);
+                        if (cl.Connected)
+                        {
+                            log.Info("Connected loopback:47806");
+                            ReadMessage(cl.GetStream());
+                        }
+                        else
+                        {
+                            cl.Close();
+                        }
                     }
                 }
                 catch (Exception) {  }
 
+
                 // cleanup any sockets that might be outstanding.
                 GC.Collect();
-                System.Threading.Thread.Sleep(5000);
+                System.Threading.Thread.Sleep(2500);
             }
 
             log.Info("adsb thread exit");
         }
+        public class Ac
+        {
+            public string hex { get; set; }
+            public string type { get; set; }
+            public string r { get; set; }
+            public string t { get; set; }
+            public string desc { get; set; }
+            public string ownOp { get; set; }
+            public string year { get; set; }
+            public object alt_baro { get; set; }
+            public double gs { get; set; }
+            public double track { get; set; }
+            public int baro_rate { get; set; }
+            public string squawk { get; set; }
+            public string category { get; set; }
+            public double lat { get; set; }
+            public double lon { get; set; }
+            public int nic { get; set; }
+            public int rc { get; set; }
+            public double seen_pos { get; set; }
+            public int version { get; set; }
+            public int nic_baro { get; set; }
+            public int nac_p { get; set; }
+            public int nac_v { get; set; }
+            public int sil { get; set; }
+            public string sil_type { get; set; }
+            public List<object> mlat { get; set; }
+            public List<object> tisb { get; set; }
+            public int messages { get; set; }
+            public double seen { get; set; }
+            public double rssi { get; set; }
+            public double dst { get; set; }
+            public double dir { get; set; }
+            public string flight { get; set; }
+            public int? alt_geom { get; set; }
+            public string emergency { get; set; }
+            public double? nav_qnh { get; set; }
+            public int? nav_altitude_mcp { get; set; }
+            public double? nav_heading { get; set; }
+            public int? gva { get; set; }
+            public int? sda { get; set; }
+            public int? alert { get; set; }
+            public int? spi { get; set; }
+            public int? geom_rate { get; set; }
+        }
 
+        public class RootObject
+        {
+            public List<Ac> ac { get; set; }
+            public string msg { get; set; }
+            public long now { get; set; }
+            public int total { get; set; }
+            public long ctime { get; set; }
+            public int ptime { get; set; }
+        }
+
+        /// <summary>
+        /// Our table of planes currently being tracked
+        /// </summary>
         static Hashtable Planes = new Hashtable();
 
         public class Plane
@@ -188,7 +403,12 @@ namespace MissionPlanner.Utilities
             double reflat = -34.988;
             double reflng = 117.8574;
 
+            // Heading in degrees, 0 is north
             public double heading = 0;
+            // Horizontal ground speed in cm/s
+            internal int ground_speed;
+            // Vertical speed in cm/s, positive = ascent
+            internal double vertical_speed;
 
             public Plane()
             {
@@ -605,7 +825,7 @@ namespace MissionPlanner.Utilities
             }
         }
 
-        public static void ReadMessage(Stream st1)
+        public void ReadMessage(Stream st1)
         {
             bool avr = false;
             bool binary = false;
@@ -634,19 +854,21 @@ namespace MissionPlanner.Utilities
                         {
                             PointLatLngAltHdg plla = new PointLatLngAltHdg(plane.plla());
                             plla.Heading = (float)plane.heading;
+                            if (plane.CallSign != null) plla.CallSign = plane.CallSign;
+                            plla.Speed = (float)plane.ground_speed;
                             if (plla.Lat == 0 && plla.Lng == 0)
                                 continue;
                             if (UpdatePlanePosition != null && plla != null)
-                                UpdatePlanePosition(plla, EventArgs.Empty);
+                                UpdatePlanePosition(this, plla);
                             //Console.WriteLine(plane.pllalocal(plane.llaeven));
-                            Console.WriteLine(plane.ID + " " + plla);
+                            Console.WriteLine("AVR ADSB: " + plane.ID + " " + plla + " CS: " + plla.CallSign);
                         }
                     }
                 }
                 else if ((by == 'M' || by == 'S' || by == 'A' || by == 'I' || by == 'C') && !binary) // msg clk sta air id sel
                 {
                     string line = ((char)by) +ReadLine(st1);
-
+                    //Console.WriteLine("ADSB: " +  line);
                     if (line.StartsWith("MSG"))
                     {
                         string[] strArray = line.Split(new char[] { ',' });
@@ -665,7 +887,9 @@ namespace MissionPlanner.Utilities
                             int altitude = 0;
                             try
                             {
-                                altitude = (int)double.Parse(strArray[11], CultureInfo.InvariantCulture);// Integer. Mode C Altitude relative to 1013 mb (29.92" Hg). 
+                                // H = HAE
+                                altitude = (int)double.Parse(strArray[11].TrimEnd('H','h'), CultureInfo.InvariantCulture);// Integer. Mode C Altitude relative to 1013 mb (29.92" Hg). 
+                                altitude = (int)((double)altitude * FEET_TO_METERS);
                             }
                             catch { }
                            
@@ -681,6 +905,12 @@ namespace MissionPlanner.Utilities
                                 lon = double.Parse(strArray[15], CultureInfo.InvariantCulture);//Float. Longitude 
                             }
                             catch { }
+                            ushort squawk = 0;
+                            try
+                            {
+                                squawk = Convert.ToUInt16(strArray[17], 16); // Convert the hex value back to a raw uint16
+                            }
+                            catch { }
 
                             bool is_on_ground = strArray[21] != "0";//Boolean. Flag to indicate ground squat switch is active. 
 
@@ -693,7 +923,16 @@ namespace MissionPlanner.Utilities
                                 continue;
 
                             if (UpdatePlanePosition != null && plane != null)
-                                UpdatePlanePosition(new PointLatLngAltHdg(lat, lon, altitude / 3.048, (float)plane.heading, hex_ident, DateTime.Now), EventArgs.Empty);
+                            {
+                                // altitude is already metres - converted from feet above
+                                PointLatLngAltHdg plln = new PointLatLngAltHdg(lat, lon, altitude, (float)plane.heading, plane.ground_speed, hex_ident, DateTime.Now)
+                                {
+                                    CallSign = plane.CallSign,
+                                    Squawk = squawk,
+                                    VerticalSpeed = plane.vertical_speed
+                                };
+                                UpdatePlanePosition(null, plln);
+                            }
                         }
                         else if (strArray[1] == "4")
                         {
@@ -712,16 +951,23 @@ namespace MissionPlanner.Utilities
                             try
                             {
                                 int ground_speed = (int)double.Parse(strArray[12], CultureInfo.InvariantCulture);// Integer. Speed over ground. 
+
+                                ((Plane)Planes[hex_ident]).ground_speed = (int)((double)ground_speed * KNOTS_TO_CMS); // knots -> cm/s
                             }
                             catch { }
                             try
                             {
-                                ((Plane)Planes[hex_ident]).heading = (int)double.Parse(strArray[13], CultureInfo.InvariantCulture);//Integer. Ground track angle. 
+                                ((Plane)Planes[hex_ident]).heading = (int)double.Parse(strArray[13], CultureInfo.InvariantCulture);//Integer degrees, 0 = N. Ground track angle.
+                            }
+                            catch { }
+                            try
+                            {
+                                ((Plane)Planes[hex_ident]).vertical_speed = double.Parse(strArray[16], CultureInfo.InvariantCulture) * FTM_TO_CMS;// Integer. 64ft resolution climb/descent rate.
                             }
                             catch { }
 
                         }
-                        else if (strArray[1] == "1")
+                        else if (strArray[1] == "1" || strArray[1] == "5" || strArray[1] == "6")
                         {
                             String session_id = strArray[2];// String. Database session record number. 
                             String aircraft_id = strArray[3];// String. Database aircraft record number. 
@@ -780,10 +1026,12 @@ namespace MissionPlanner.Utilities
                                 if (plla.Lat == 0 && plla.Lng == 0)
                                     continue;
                                 plla.Heading = (float)plane.heading;
+                                if (plane.CallSign != null) plla.CallSign = plane.CallSign;
+                                plla.Speed = plane.ground_speed;
                                 if (UpdatePlanePosition != null && plla != null)
-                                    UpdatePlanePosition(plla, EventArgs.Empty);
+                                    UpdatePlanePosition(this, plla);
                                 //Console.WriteLine(plane.pllalocal(plane.llaeven));
-                                Console.WriteLine(plla);
+                                //Console.WriteLine(plla);
                             }
                             break;
                         default:
@@ -939,6 +1187,9 @@ namespace MissionPlanner.Utilities
                 }
 
                 adsbmess.Ident = builder.ToString();
+
+                ((Plane)Planes[adsbmess.AA.ToString("X5")]).CallSign = adsbmess.Ident;
+                
                 //Console.WriteLine("Ident " + builder.ToString());
             } 
             else if (adsbmess.DF == 17 && adsbmess.TypeCode == 0x13) // velocity
@@ -976,10 +1227,12 @@ namespace MissionPlanner.Utilities
                             nsvel *= -1;
 
                         double cog = (Math.Atan2(ewvel, nsvel) * (180 / Math.PI));
+                        double _gs = Math.Sqrt(ewvel * ewvel + nsvel * nsvel) ;
 
-                        Console.WriteLine("vel " + ewvel + " " + nsvel + " " + cog);
+                        Console.WriteLine("vel " + ewvel + " " + nsvel + " " + cog + " gs " + _gs);
 
                         ((Plane)Planes[adsbmess.AA.ToString("X5")]).heading = (cog + 360) % 360;
+                        ((Plane)Planes[adsbmess.AA.ToString("X5")]).ground_speed = (int)(_gs * KNOTS_TO_CMS);
 
                         break;
                 }
@@ -1020,7 +1273,7 @@ namespace MissionPlanner.Utilities
                 this.Tag = plla.Tag;
             }
 
-            public PointLatLngAltHdg(double lat, double lng, double alt, float heading, string tag, DateTime time)
+            public PointLatLngAltHdg(double lat, double lng, double alt, float heading, double speed, string tag, DateTime time)
             {
                 this.Lat = lat;
                 this.Lng = lng;
@@ -1028,8 +1281,12 @@ namespace MissionPlanner.Utilities
                 this.Heading = heading;
                 this.Tag = tag;
                 this.Time = time;
+                this.Speed = speed;
             }
 
+            /// <summary>
+            /// Heading in degrees, 0 = north
+            /// </summary>
             public float Heading { get; set; }
 
             public MAVLink.MAV_COLLISION_THREAT_LEVEL ThreatLevel { get; set; }
@@ -1038,7 +1295,20 @@ namespace MissionPlanner.Utilities
 
             public bool DisplayICAO { get; set; }
 
-            public string CallSign { get; set; }
+            public string CallSign { get; set; } = "";
+
+            public ushort Squawk { get; set; }
+
+            /// <summary>
+            /// Horizontal ground speed in cm/s
+            /// </summary>
+            public double Speed { get; set; }
+            /// <summary>
+            /// Vertical speed in cm/s, positive = ascent
+            /// </summary>
+            public double VerticalSpeed { get; set; }
+            public object Raw { get; set; }
+            public object Source { get; set; }
         }
     }
 }

@@ -1,32 +1,30 @@
 using System;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
-using AltitudeAngelWings.Models;
+using AltitudeAngelWings.Model;
 using AltitudeAngelWings.Service.FlightData.Providers;
 
 namespace AltitudeAngelWings.Service.FlightData
 {
-    public class FlightDataService : IDisposable
+    public class FlightDataService : IFlightDataService
     {
-        public IObservable<Models.FlightData> FlightArmed { get; }
-        public IObservable<Models.FlightData> FlightDisarmed { get; }
-        public IObservable<Models.FlightData> ArmedFlightData { get; }
-        public IObservable<Models.FlightData> RawFlightData => _rawFlightData;
+        public IObservable<Model.FlightData> FlightArmed { get; }
+        public IObservable<Model.FlightData> FlightDisarmed { get; }
+        public IObservable<Model.FlightData> ArmedFlightData { get; }
+        public IObservable<Model.FlightData> RawFlightData => _rawFlightData;
 
         public FlightDataService(
-            IObservable<long> pollInterval,
+            TimeSpan pollInterval,
             IFlightDataProvider flightDataProvider)
         {
-            _flightDataProvider = flightDataProvider;
-
-            _rawFlightData = pollInterval
-                .Select(i => _flightDataProvider.GetCurrentFlightData())
+            _rawFlightData = Observable.Interval(pollInterval)
+                .Select(_ => flightDataProvider.GetCurrentFlightData())
                 .Publish();
 
             FlightArmed = _rawFlightData
                 .DistinctUntilChanged(i => i.Armed)
                 .Where(i => i.Armed)
-                .Select(flightData => new Models.FlightData(flightData) {HomePosition = flightData.CurrentPosition});
+                .Select(flightData => new Model.FlightData(flightData) {HomePosition = flightData.CurrentPosition});
 
             FlightDisarmed = _rawFlightData
                 .DistinctUntilChanged(i => i.Armed)
@@ -34,16 +32,8 @@ namespace AltitudeAngelWings.Service.FlightData
 
             ArmedFlightData = _rawFlightData
                 .Where(i => i.Armed)
-                .Select(flightData => new Models.FlightData(flightData) {HomePosition = _homePosition});
-        }
+                .Select(flightData => new Model.FlightData(flightData) {HomePosition = _homePosition});
 
-        public void Dispose()
-        {
-            Dispose(true);
-        }
-
-        public void Initialize()
-        {
             FlightArmed
                 .Subscribe(i => _homePosition = i.CurrentPosition);
 
@@ -53,17 +43,19 @@ namespace AltitudeAngelWings.Service.FlightData
             _rawFlightDataSubscription = _rawFlightData.Connect();
         }
 
-        protected virtual void Dispose(bool isDisposing)
+        public void Dispose()
         {
-            if (isDisposing)
-            {
-                _rawFlightDataSubscription?.Dispose();
-                _rawFlightDataSubscription = null;
-            }
+            Dispose(true);
         }
 
-        private readonly IFlightDataProvider _flightDataProvider;
-        private readonly IConnectableObservable<Models.FlightData> _rawFlightData;
+        protected virtual void Dispose(bool isDisposing)
+        {
+            if (!isDisposing) return;
+            _rawFlightDataSubscription?.Dispose();
+            _rawFlightDataSubscription = null;
+        }
+
+        private readonly IConnectableObservable<Model.FlightData> _rawFlightData;
         private FlightDataPosition _homePosition;
         private IDisposable _rawFlightDataSubscription;
     }

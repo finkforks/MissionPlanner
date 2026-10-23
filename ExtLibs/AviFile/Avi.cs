@@ -91,8 +91,8 @@ namespace AviFile {
 			public RECT		rcFrame;
 			public Int32    dwEditCount;
 			public Int32    dwFormatChangeCount;
-			[MarshalAs(UnmanagedType.ByValArray, SizeConst=64)]
-			public UInt16[]    szName;
+			[MarshalAs(UnmanagedType.ByValTStr, SizeConst=64)]
+			public String   szName;
 		}
 		[StructLayout(LayoutKind.Sequential, Pack=1)]
 		public struct BITMAPFILEHEADER{

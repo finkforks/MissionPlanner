@@ -1,40 +1,48 @@
-﻿using System;
-using System.Data;
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.Globalization;
-using System.IO;
-using System.IO.Ports;
-using System.Net;
-using System.Net.Sockets;
-using System.Reflection;
-using System.Runtime.InteropServices;
-using System.Security;
-using System.Text;
-using System.Text.RegularExpressions;
-using System.Threading;
-using System.Windows.Forms;
-using System.Xml;
-using DotSpatial.Data;
-using DotSpatial.Projections;
+﻿using DotSpatial.Projections;
 using GMap.NET;
 using GMap.NET.MapProviders;
 using GMap.NET.WindowsForms;
 using log4net;
-using MissionPlanner.Arduino;
+using MissionPlanner.ArduPilot;
+using MissionPlanner.ArduPilot.Mavlink;
 using MissionPlanner.Comms;
 using MissionPlanner.Controls;
 using MissionPlanner.GCSViews;
+using MissionPlanner.GCSViews.ConfigurationView;
 using MissionPlanner.GeoRef;
-using MissionPlanner.HIL;
 using MissionPlanner.Log;
 using MissionPlanner.Maps;
 using MissionPlanner.Swarm;
 using MissionPlanner.Utilities;
 using MissionPlanner.Warnings;
 using resedit;
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Configuration;
+using System.Data;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Net.Sockets;
+using System.Reflection;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using System.Xml;
+using System.Xml.Serialization;
+using DotSpatial.Data;
+using Microsoft.Scripting.Utils;
+using static MissionPlanner.Utilities.Firmware;
+using Formatting = Newtonsoft.Json.Formatting;
 using ILog = log4net.ILog;
-using LogAnalyzer = MissionPlanner.Utilities.LogAnalyzer;
 
 namespace MissionPlanner
 {
@@ -42,8 +50,6 @@ namespace MissionPlanner
     {
         private static readonly ILog log =
             LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
-
-        public static XPlane xp;
 
         private static MAVLinkSerialPort comport;
 
@@ -54,21 +60,6 @@ namespace MissionPlanner
         public temp()
         {
             InitializeComponent();
-
-            //if (System.Diagnostics.Debugger.IsAttached) 
-            {
-                try
-                {
-                    var ogl = new OpenGLtest2();
-
-                    Controls.Add(ogl);
-
-                    ogl.Dock = DockStyle.Fill;
-                }
-                catch
-                {
-                }
-            }
 
             Tracking.AddPage(
                 MethodBase.GetCurrentMethod().DeclaringType.ToString(),
@@ -91,7 +82,8 @@ namespace MissionPlanner
 
             MainMap.MapProvider = GoogleSatelliteMapProvider.Instance;
 
-            MainMap.CacheLocation = Path.GetDirectoryName(Application.ExecutablePath) + "/gmapcache/";
+            MainMap.CacheLocation = Settings.GetDataDirectory() +
+                                    "gmapcache" + Path.DirectorySeparatorChar;
 
             var fbd = new FolderBrowserDialog();
 
@@ -150,6 +142,8 @@ namespace MissionPlanner
                     // Application.DoEvents();
                 }
             }
+
+            MainMap.Dispose();
         }
 
         private void BUT_clearcustommaps_Click(object sender, EventArgs e)
@@ -162,6 +156,8 @@ namespace MissionPlanner
             CustomMessageBox.Show("Removed " + removed + " images");
 
             log.InfoFormat("Removed {0} images", removed);
+
+            MainMap.Dispose();
         }
 
         private void BUT_lang_edit_Click(object sender, EventArgs e)
@@ -183,7 +179,14 @@ namespace MissionPlanner
 
         private void BUT_paramgen_Click(object sender, EventArgs e)
         {
-            ParameterMetaDataParser.GetParameterInformation();
+            /*
+            if(MissionPlanner.Utilities.Update.dobeta)
+                ParameterMetaDataParser.GetParameterInformation(ConfigurationManager.AppSettings["ParameterLocationsBleeding"]);
+            else
+                ParameterMetaDataParser.GetParameterInformation(ConfigurationManager.AppSettings["ParameterLocations"]);
+                */
+            // scan latest, and append older
+            ParameterMetaDataParser.GetParameterInformation(ConfigurationManager.AppSettings["ParameterLocationsBleeding"] + ";" + ConfigurationManager.AppSettings["ParameterLocations"]);
 
             ParameterMetaDataRepositoryAPM.Reload();
         }
@@ -197,32 +200,6 @@ namespace MissionPlanner
         {
             new OSDVideo().Show();
         }
-
-        private void BUT_xplane_Click(object sender, EventArgs e)
-        {
-            if (xp == null)
-            {
-                xp = new XPlane();
-
-                xp.SetupSockets(49005, 49000, "127.0.0.1");
-            }
-
-
-            ThreadPool.QueueUserWorkItem(runxplanemove);
-
-            //xp.Shutdown();
-        }
-
-        private void runxplanemove(object o)
-        {
-            while (xp != null)
-            {
-                Thread.Sleep(500);
-                xp.MoveToPos(MainV2.comPort.MAV.cs.lat, MainV2.comPort.MAV.cs.lng, MainV2.comPort.MAV.cs.alt,
-                    MainV2.comPort.MAV.cs.roll, MainV2.comPort.MAV.cs.pitch, MainV2.comPort.MAV.cs.yaw);
-            }
-        }
-        
 
         private void BUT_swarm_Click(object sender, EventArgs e)
         {
@@ -238,17 +215,11 @@ namespace MissionPlanner
         {
             new SerialOutputNMEA().Show();
         }
-        
+
         private void BUT_followleader_Click(object sender, EventArgs e)
         {
             new FollowPathControl().Show();
         }
-
-        private void BUT_driverclean_Click(object sender, EventArgs e)
-        {
-            CleanDrivers.Clean();
-        }
-        
 
         private void BUT_sorttlogs_Click(object sender, EventArgs e)
         {
@@ -266,7 +237,7 @@ namespace MissionPlanner
                 }
             }
         }
-        
+
         private void BUT_movingbase_Click(object sender, EventArgs e)
         {
             var si = new MovingBase();
@@ -284,148 +255,51 @@ namespace MissionPlanner
 
             var list = fw.getFWList();
 
-            using (
-                var xmlwriter = new XmlTextWriter(basedir + Path.DirectorySeparatorChar + @"firmware2.xml",
-                    Encoding.ASCII))
+            var options = new optionsObject();
+            options.softwares = list;
+
+            var members = typeof(software).GetFields();
+
+            XmlWriterSettings settings = new XmlWriterSettings();
+            settings.IndentChars = "    ";
+            settings.Indent = true;
+            settings.Encoding = Encoding.ASCII;
+
+            using (var xmlwriter = XmlWriter.Create(basedir + Path.DirectorySeparatorChar + @"firmware2.xml", settings))
             {
-                xmlwriter.Formatting = Formatting.Indented;
-
-                xmlwriter.WriteStartDocument();
-
-                xmlwriter.WriteStartElement("options");
-
-                foreach (var software in list)
+                for (int a = 0; a < options.softwares.Count; a++)
                 {
-                    //if (!software.name.Contains("Copter"))
-                    //  continue;
+                    Loading.ShowLoading(((a - 1) / (float)list.Count) * 100.0 + "% " + options.softwares[a].name, this);
 
-                    xmlwriter.WriteStartElement("Firmware");
+                    List<Task<bool>> tasklist = new List<Task<bool>>();
 
-                    if (software.url != "")
-                        xmlwriter.WriteElementString("url", new Uri(software.url).LocalPath.TrimStart('/', '\\'));
-                    if (software.url2560 != "")
-                        xmlwriter.WriteElementString("url2560", new Uri(software.url2560).LocalPath.TrimStart('/', '\\'));
-                    if (software.url2560_2 != "")
-                        xmlwriter.WriteElementString("url2560-2",
-                            new Uri(software.url2560_2).LocalPath.TrimStart('/', '\\'));
-                    if (software.urlpx4v1 != "")
-                        xmlwriter.WriteElementString("urlpx4", new Uri(software.urlpx4v1).LocalPath.TrimStart('/', '\\'));
-                    if (software.urlpx4v2 != "")
-                        xmlwriter.WriteElementString("urlpx4v2",
-                            new Uri(software.urlpx4v2).LocalPath.TrimStart('/', '\\'));
-                    if (software.urlpx4v4 != "")
-                        xmlwriter.WriteElementString("urlpx4v4",
-                            new Uri(software.urlpx4v4).LocalPath.TrimStart('/', '\\'));
-                    if (software.urlvrbrainv40 != "")
-                        xmlwriter.WriteElementString("urlvrbrainv40",
-                            new Uri(software.urlvrbrainv40).LocalPath.TrimStart('/', '\\'));
-                    if (software.urlvrbrainv45 != "")
-                        xmlwriter.WriteElementString("urlvrbrainv45",
-                            new Uri(software.urlvrbrainv45).LocalPath.TrimStart('/', '\\'));
-                    if (software.urlvrbrainv50 != "")
-                        xmlwriter.WriteElementString("urlvrbrainv50",
-                            new Uri(software.urlvrbrainv50).LocalPath.TrimStart('/', '\\'));
-                    if (software.urlvrbrainv51 != "")
-                        xmlwriter.WriteElementString("urlvrbrainv51",
-                            new Uri(software.urlvrbrainv51).LocalPath.TrimStart('/', '\\'));
-                    if (software.urlvrbrainv52 != "")
-                        xmlwriter.WriteElementString("urlvrbrainv52",
-                            new Uri(software.urlvrbrainv52).LocalPath.TrimStart('/', '\\'));
-                    if (software.urlvrcorev10 != "")
-                        xmlwriter.WriteElementString("urlvrcorev10",
-                            new Uri(software.urlvrcorev10).LocalPath.TrimStart('/', '\\'));
-                    if (software.urlvrubrainv51 != "")
-                        xmlwriter.WriteElementString("urlvrubrainv51",
-                            new Uri(software.urlvrubrainv51).LocalPath.TrimStart('/', '\\'));
-                    if (software.urlvrubrainv52 != "")
-                        xmlwriter.WriteElementString("urlvrubrainv52",
-                            new Uri(software.urlvrubrainv52).LocalPath.TrimStart('/', '\\'));
-                    if (software.urlbebop2 != "")
-                        xmlwriter.WriteElementString("urlbebop2",
-                            new Uri(software.urlbebop2).LocalPath.TrimStart('/', '\\'));
-                    xmlwriter.WriteElementString("name", software.name);
-                    xmlwriter.WriteElementString("desc", software.desc);
-                    xmlwriter.WriteElementString("format_version", software.k_format_version.ToString());
+                    foreach (var field in members)
+                    {
+                        if (field.Name.ToLower().Contains("url"))
+                        {
+                            var url = field.GetValue(options.softwares[a]).ToString();
 
-                    xmlwriter.WriteEndElement();
+                            if (String.IsNullOrEmpty(url))
+                                continue;
 
-                    if (software.url != "")
-                    {
-                        Common.getFilefromNet(software.url, basedir + new Uri(software.url).LocalPath);
-                    }
-                    if (software.url2560 != "")
-                    {
-                        Common.getFilefromNet(software.url2560, basedir + new Uri(software.url2560).LocalPath);
-                    }
-                    if (software.url2560_2 != "")
-                    {
-                        Common.getFilefromNet(software.url2560_2, basedir + new Uri(software.url2560_2).LocalPath);
-                    }
-                    if (software.urlpx4v1 != "")
-                    {
-                        Common.getFilefromNet(software.urlpx4v1, basedir + new Uri(software.urlpx4v1).LocalPath);
-                    }
-                    if (software.urlpx4v2 != "")
-                    {
-                        Common.getFilefromNet(software.urlpx4v2, basedir + new Uri(software.urlpx4v2).LocalPath);
-                    }
-                    if (software.urlpx4v4 != "")
-                    {
-                        Common.getFilefromNet(software.urlpx4v4, basedir + new Uri(software.urlpx4v4).LocalPath);
+                            field.SetValue(options.softwares[a], new Uri(url).LocalPath.TrimStart('/', '\\'));
+
+                            var task = Download.getFilefromNetAsync(url, basedir + new Uri(url).LocalPath);
+                            tasklist.Add(task);
+                        }
                     }
 
-                    if (software.urlvrbrainv40 != "")
-                    {
-                        Common.getFilefromNet(software.urlvrbrainv40,
-                            basedir + new Uri(software.urlvrbrainv40).LocalPath);
-                    }
-                    if (software.urlvrbrainv45 != "")
-                    {
-                        Common.getFilefromNet(software.urlvrbrainv45,
-                            basedir + new Uri(software.urlvrbrainv45).LocalPath);
-                    }
-                    if (software.urlvrbrainv50 != "")
-                    {
-                        Common.getFilefromNet(software.urlvrbrainv50,
-                            basedir + new Uri(software.urlvrbrainv50).LocalPath);
-                    }
-                    if (software.urlvrbrainv51 != "")
-                    {
-                        Common.getFilefromNet(software.urlvrbrainv51,
-                            basedir + new Uri(software.urlvrbrainv51).LocalPath);
-                    }
-                    if (software.urlvrbrainv52 != "")
-                    {
-                        Common.getFilefromNet(software.urlvrbrainv52,
-                            basedir + new Uri(software.urlvrbrainv52).LocalPath);
-                    }
-                    if (software.urlvrcorev10 != "")
-                    {
-                        Common.getFilefromNet(software.urlvrcorev10, basedir + new Uri(software.urlvrcorev10).LocalPath);
-                    }
-                    if (software.urlvrubrainv51 != "")
-                    {
-                        Common.getFilefromNet(software.urlvrubrainv51,
-                            basedir + new Uri(software.urlvrubrainv51).LocalPath);
-                    }
-                    if (software.urlvrubrainv52 != "")
-                    {
-                        Common.getFilefromNet(software.urlvrubrainv52,
-                            basedir + new Uri(software.urlvrubrainv52).LocalPath);
-                    }
-                    if (software.urlbebop2 != "")
-                    {
-                        Common.getFilefromNet(software.urlbebop2,
-                            basedir + new Uri(software.urlbebop2).LocalPath);
-                    }
+                    //Task.WaitAll(tasklist.ToArray());
                 }
 
-                xmlwriter.WriteEndElement();
-                xmlwriter.WriteEndDocument();
+                XmlSerializer xms = new XmlSerializer(typeof(optionsObject), new Type[] { typeof(software) });
+
+                xms.Serialize(xmlwriter, options);
             }
+            Loading.Close();
         }
 
- 
+
         private void button3_Click(object sender, EventArgs e)
         {
             var frm = new WarningsManager();
@@ -477,7 +351,7 @@ namespace MissionPlanner
             try
             {
                 // Get the listener that handles the client request.
-                var listener = (TcpListener) ar.AsyncState;
+                var listener = (TcpListener)ar.AsyncState;
 
                 listener.BeginAcceptTcpClient(DoAcceptTcpClientCallback, listener);
 
@@ -533,9 +407,9 @@ namespace MissionPlanner
             }
         }
 
-        private void BUT_magfit2_Click(object sender, EventArgs e)
+        private async void BUT_magfit2_Click(object sender, EventArgs e)
         {
-            MagCalib.ProcessLog(0);
+            await MagCalib.ProcessLog(0).ConfigureAwait(false);
         }
 
         private void BUT_shptopoly_Click(object sender, EventArgs e)
@@ -593,12 +467,12 @@ namespace MissionPlanner
                         var sb = new StringBuilder();
 
                         sb.Append("#Shap to Poly - Mission Planner\r\n");
-                        foreach (var point in feature.Coordinates)
+                        foreach (var point in feature.Geometry.Coordinates)
                         {
                             if (reproject)
                             {
-                                double[] xyarray = {point.X, point.Y};
-                                double[] zarray = {point.Z};
+                                double[] xyarray = { point.X, point.Y };
+                                double[] zarray = { point.Z };
 
                                 Reproject.ReprojectPoints(xyarray, zarray, pStart, pESRIEnd, 0, 1);
 
@@ -619,15 +493,39 @@ namespace MissionPlanner
                 }
             }
         }
-        
+
         private void but_gimbaltest_Click(object sender, EventArgs e)
         {
             if (MainV2.comPort.BaseStream.IsOpen)
-                GimbalPoint.ProjectPoint();
+            {
+                GimbalPoint.ProjectPoint(MainV2.comPort);
+            }
             else
                 CustomMessageBox.Show(Strings.PleaseConnect, Strings.ERROR);
         }
-        
+
+        private string[] GetFiles(string path, string pattern)
+        {
+            var files = new List<string>();
+            var directories = new string[] { };
+
+            try
+            {
+                files.AddRange(Directory.GetFiles(path, pattern, SearchOption.TopDirectoryOnly));
+                directories = Directory.GetDirectories(path);
+            }
+            catch (UnauthorizedAccessException) { }
+
+            foreach (var directory in directories)
+                try
+                {
+                    files.AddRange(GetFiles(directory, pattern));
+                }
+                catch (UnauthorizedAccessException) { }
+
+            return files.ToArray();
+        }
+
         private void but_maplogs_Click(object sender, EventArgs e)
         {
             var fbd = new FolderBrowserDialog();
@@ -635,9 +533,9 @@ namespace MissionPlanner
 
             if (fbd.ShowDialog() == DialogResult.OK)
             {
-                LogMap.MapLogs(Directory.GetFiles(fbd.SelectedPath, "*.tlog", SearchOption.AllDirectories));
-                LogMap.MapLogs(Directory.GetFiles(fbd.SelectedPath, "*.bin", SearchOption.AllDirectories));
-                LogMap.MapLogs(Directory.GetFiles(fbd.SelectedPath, "*.log", SearchOption.AllDirectories));
+                LogMap.MapLogs(GetFiles(fbd.SelectedPath, "*.tlog"));
+                LogMap.MapLogs(GetFiles(fbd.SelectedPath, "*.bin"));
+                LogMap.MapLogs(GetFiles(fbd.SelectedPath, "*.log"));
             }
         }
 
@@ -647,14 +545,14 @@ namespace MissionPlanner
 
             form.Show();
         }
-        
+
         private void but_structtest_Click(object sender, EventArgs e)
         {
             var array = new byte[100];
 
             for (var l = 0; l < array.Length; l++)
             {
-                array[l] = (byte) l;
+                array[l] = (byte)l;
             }
 
             var a = 0;
@@ -665,8 +563,8 @@ namespace MissionPlanner
             start = DateTime.Now;
             for (a = 0; a < 1000000; a++)
             {
-                var obj = (object) new MAVLink.mavlink_heartbeat_t();
-                MavlinkUtil.ByteArrayToStructure(array, ref obj, 6);
+                var obj = (object)new MAVLink.mavlink_heartbeat_t();
+                MavlinkUtil.ByteArrayToStructure(array, ref obj, 6, 5);
             }
             end = DateTime.Now;
             Console.WriteLine("ByteArrayToStructure " + (end - start).TotalMilliseconds);
@@ -691,7 +589,26 @@ namespace MissionPlanner
                 var ans3 = MavlinkUtil.ByteArrayToStructureGC<MAVLink.mavlink_heartbeat_t>(array, 6);
             }
             end = DateTime.Now;
+            Console.WriteLine("ByteArrayToStructureGC<T> " + (end - start).TotalMilliseconds);
+
+            start = DateTime.Now;
+            for (a = 0; a < 1000000; a++)
+            {
+                var ans4 = MavlinkUtil.ByteArrayToStructureGC(array, typeof(MAVLink.mavlink_heartbeat_t), 6, 5);
+            }
+            end = DateTime.Now;
             Console.WriteLine("ByteArrayToStructureGC " + (end - start).TotalMilliseconds);
+
+            start = DateTime.Now;
+            for (a = 0; a < 1000000; a++)
+            {
+                var ans4 = MavlinkUtil.ByteArrayToStructureGCArray(array, typeof(MAVLink.mavlink_heartbeat_t), 6, 5);
+            }
+            end = DateTime.Now;
+            Console.WriteLine("ByteArrayToStructureGCArray " + (end - start).TotalMilliseconds);
+
+
+            
         }
 
         private void but_armandtakeoff_Click(object sender, EventArgs e)
@@ -707,7 +624,7 @@ namespace MissionPlanner
 
                     Thread.Sleep(300);
 
-                    MainV2.comPort.doCommand(MAVLink.MAV_CMD.TAKEOFF, 0, 0, 0, 0, 0, 0, 10);
+                    MainV2.comPort.doCommand(MainV2.comPort.sysidcurrent, (byte)MainV2.comPort.compidcurrent, MAVLink.MAV_CMD.TAKEOFF, 0, 0, 0, 0, 0, 0, 10);
                 }
             }
             catch (Exception ex)
@@ -718,12 +635,20 @@ namespace MissionPlanner
 
         private void but_sitl_comb_Click(object sender, EventArgs e)
         {
+            StreamCombiner.Connect += (mav, localsysid) =>
+            {
+                MainV2.instance.doConnect(mav, "preset",
+                    localsysid.ToString());
+
+                MainV2.Comports.Add(mav);
+            };
+
             StreamCombiner.Start();
         }
 
         private void but_injectgps_Click(object sender, EventArgs e)
         {
-            new SerialInjectGPS().Show();
+            new ConfigSerialInjectGPS().Show();
         }
 
         private void BUT_fft_Click(object sender, EventArgs e)
@@ -732,33 +657,33 @@ namespace MissionPlanner
 
             fft.Show();
         }
-        
+
 
         private void but_reboot_Click(object sender, EventArgs e)
         {
-            MainV2.comPort.doReboot(false, true);
+            if (CustomMessageBox.Show("Are you sure?", "", MessageBoxButtons.YesNo) == (int)DialogResult.Yes)
+                MainV2.comPort.doReboot(false, true);
         }
 
         private void BUT_QNH_Click(object sender, EventArgs e)
         {
-            var currentQNH = MainV2.comPort.GetParam("GND_ABS_PRESS").ToString();
+            var paramname = MainV2.comPort.MAV.param.ContainsKey("GND_ABS_PRESS") ? "GND_ABS_PRESS" : "BARO1_GND_PRESS";
+
+            var currentQNH = MainV2.comPort.GetParam(paramname).ToString();
 
             if (InputBox.Show("QNH", "Enter the QNH in pascals (103040 = 1030.4 hPa)", ref currentQNH) ==
                 DialogResult.OK)
             {
                 var newQNH = double.Parse(currentQNH);
 
-                MainV2.comPort.setParam("GND_ABS_PRESS", newQNH);
+                MainV2.comPort.setParam(MainV2.comPort.sysidcurrent, (byte) MainV2.comPort.compidcurrent,
+                    paramname, newQNH);
             }
         }
 
         private void but_trimble_Click(object sender, EventArgs e)
         {
-            var port = "com1";
-            if (InputBox.Show("enter comport", "enter comport", ref port) == DialogResult.OK)
-            {
-                new AP_GPS_GSOF(port);
-            }
+            new Swarm.Sequence.LayoutEditor().Show();
         }
 
         private void myButton_vlc_Click(object sender, EventArgs e)
@@ -780,24 +705,11 @@ namespace MissionPlanner
             }
         }
 
-        private void but_gstream_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                if (GStreamer.checkGstLaunchExe())
-                {
-                    GStreamer.Start();
-                }
-            }
-            catch (Exception ex)
-            {
-                CustomMessageBox.Show(ex.ToString(), Strings.ERROR);
-            }
-        }
+
 
         private void but_agemapdata_Click(object sender, EventArgs e)
         {
-            var removed = ((PureImageCache) MyImageCache.Instance).DeleteOlderThan(DateTime.Now.AddDays(-30),
+            var removed = ((PureImageCache)MyImageCache.Instance).DeleteOlderThan(DateTime.Now.AddDays(-30),
                 FlightData.instance.gMapControl1.MapProvider.DbId);
 
             CustomMessageBox.Show("Removed " + removed + " images");
@@ -807,60 +719,18 @@ namespace MissionPlanner
 
         private void myButton1_Click_2(object sender, EventArgs e)
         {
-            ParameterMetaDataParser.GetParameterInformation(
-                "https://raw.githubusercontent.com/ArduPilot/ardupilot/ArduCopter-2.8.1/ArduCopter/Parameters.pde"
-                , "ArduCopter2.8.1.xml");
-
-            ParameterMetaDataParser.GetParameterInformation(
-                "https://raw.githubusercontent.com/ArduPilot/ardupilot/ArduCopter-2.9.1/ArduCopter/Parameters.pde"
-                , "ArduCopter2.9.1.xml");
-
-            ParameterMetaDataParser.GetParameterInformation(
-                "https://raw.githubusercontent.com/ArduPilot/ardupilot/ArduCopter-3.0/ArduCopter/Parameters.pde"
-                , "ArduCopter3.0.xml");
-
-            ParameterMetaDataParser.GetParameterInformation(
-                "https://raw.githubusercontent.com/ArduPilot/ardupilot/ArduCopter-3.1.5/ArduCopter/Parameters.pde"
-                , "ArduCopter3.1.5.xml");
-
-            ParameterMetaDataParser.GetParameterInformation(
-                "https://raw.githubusercontent.com/ArduPilot/ardupilot/ArduCopter-3.2.1/ArduCopter/Parameters.pde"
-                , "ArduCopter3.2.1.xml");
-
-            ParameterMetaDataParser.GetParameterInformation(
-                "https://raw.githubusercontent.com/ArduPilot/ardupilot/Copter-3.3.2/ArduCopter/Parameters.cpp"
-                , "ArduCopter3.3.2.xml");
-
-
-// plane
-
-            ParameterMetaDataParser.GetParameterInformation(
-                "https://raw.githubusercontent.com/ArduPilot/ardupilot/ArduPlane-3.5.2/ArduPlane/Parameters.cpp"
-                , "ArduPlane3.5.2.xml");
-
-            ParameterMetaDataParser.GetParameterInformation(
-                "https://raw.githubusercontent.com/ArduPilot/ardupilot/ArduPlane-3.3.0/ArduPlane/Parameters.pde"
-                , "ArduPlane3.3.0.xml");
-
-            ParameterMetaDataParser.GetParameterInformation(
-                "https://raw.githubusercontent.com/ArduPilot/ardupilot/ArduPlane-3.2.2/ArduPlane/Parameters.pde"
-                , "ArduPlane3.2.2.xml");
-
-            ParameterMetaDataParser.GetParameterInformation(
-                "https://raw.githubusercontent.com/ArduPilot/ardupilot/ArduPlane-3.1.0/ArduPlane/Parameters.pde"
-                , "ArduPlane3.1.0.xml");
-
-            ParameterMetaDataParser.GetParameterInformation(
-                "https://raw.githubusercontent.com/ArduPilot/ardupilot/ArduPlane-3.0.3/ArduPlane/Parameters.pde"
-                , "ArduPlane3.0.3.xml");
-
-            ParameterMetaDataParser.GetParameterInformation(
-                "https://raw.githubusercontent.com/ArduPilot/ardupilot/ArduPlane-2.78b/ArduPlane/Parameters.pde"
-                , "ArduPlane2.78b.xml");
-
-            ParameterMetaDataParser.GetParameterInformation(
-                "https://raw.githubusercontent.com/ArduPilot/ardupilot/ArduPlane-2.75/ArduPlane/Parameters.pde"
-                , "ArduPlane2.75.xml");
+            
+            OpenFileDialog openFileDialog1 = new OpenFileDialog();
+            openFileDialog1.Filter = "Log Files|*.log;*.bin;*.BIN;*.LOG";
+            openFileDialog1.FilterIndex = 2;
+            openFileDialog1.Multiselect = true;
+            openFileDialog1.InitialDirectory =  Settings.Instance.LogDir;
+            if (openFileDialog1.ShowDialog() == DialogResult.OK)
+            {
+                int a = 10;
+                InputBox.Show("How Many", "Enter how many pieces to split into", ref a);
+                new DFLogBuffer(openFileDialog1.FileName).SplitLog(a);
+            }            
         }
 
         private void but_signkey_Click(object sender, EventArgs e)
@@ -880,7 +750,7 @@ namespace MissionPlanner
 
             test.Show();
 
-            var flow = new OpticalFlow(MainV2.comPort);
+            var flow = new OpticalFlow(MainV2.comPort, MainV2.comPort.sysidcurrent, (byte)MainV2.comPort.compidcurrent);
 
             // disable on close form
             test.Closed += (o, args) =>
@@ -893,23 +763,10 @@ namespace MissionPlanner
             flow.CalibrationMode(true);
 
             // setup bitmap to screen
-            flow.newImage += (s, eh) => imagebox.Image = (Image) eh.Image.Clone();
+            flow.newImage += (s, eh) => imagebox.Image = (Image)eh.Image.Clone();
         }
 
-        private void myButton2_Click(object sender, EventArgs e)
-        {
-            var sp = new Sphere();
-
-            sp.Dock = DockStyle.Fill;
-
-            var frm = new Form();
-
-            frm.Controls.Add(sp);
-
-            frm.Show();
-        }
-
-        private void but_gpsinj_Click(object sender, EventArgs e)
+        private async void but_gpsinj_Click(object sender, EventArgs e)
         {
             OpenFileDialog ofd = new OpenFileDialog();
             ofd.Filter = "tlog|*.tlog";
@@ -917,9 +774,9 @@ namespace MissionPlanner
 
             SaveFileDialog sfd = new SaveFileDialog();
             sfd.FileName = "output.dat";
-            sfd.ShowDialog();
+            var result = sfd.ShowDialog();
 
-            if (ofd.CheckFileExists)
+            if (ofd.CheckFileExists && result == DialogResult.OK)
             {
                 using (var st = sfd.OpenFile())
                 {
@@ -929,11 +786,16 @@ namespace MissionPlanner
 
                         while (mine.logplaybackfile.BaseStream.Position < mine.logplaybackfile.BaseStream.Length)
                         {
-                            MAVLink.MAVLinkMessage packet = mine.readPacket();
+                            MAVLink.MAVLinkMessage packet = await mine.readPacketAsync().ConfigureAwait(true);
 
-                            if (packet.msgid == (uint) MAVLink.MAVLINK_MSG_ID.GPS_INJECT_DATA)
+                            if (packet.msgid == (uint)MAVLink.MAVLINK_MSG_ID.GPS_INJECT_DATA)
                             {
                                 var item = packet.ToStructure<MAVLink.mavlink_gps_inject_data_t>();
+                                st.Write(item.data, 0, item.len);
+                            }
+                            else if (packet.msgid == (uint)MAVLink.MAVLINK_MSG_ID.GPS_RTCM_DATA)
+                            {
+                                var item = packet.ToStructure<MAVLink.mavlink_gps_rtcm_data_t>();
                                 st.Write(item.data, 0, item.len);
                             }
                         }
@@ -942,9 +804,631 @@ namespace MissionPlanner
             }
         }
 
-        private void but_AA_Click(object sender, EventArgs e)
+        private void but_followswarm_Click(object sender, EventArgs e)
         {
-            Utilities.AltitudeAngel.AltitudeAngel.service.SignInAsync();
+            new Swarm.WaypointLeader.WPControl().Show();
+        }
+
+        private void myButton3_Click(object sender, EventArgs e)
+        {
+            but_GDAL_Click(sender, e);
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            switch (m.Msg)
+            {
+                case 0x86: // WM_NCACTIVATE
+                    var child = Control.FromHandle(m.LParam);
+
+                    if (child is Form)
+                    {
+                        ThemeManager.ApplyThemeTo(child);
+                    }
+                    break;
+            }
+            base.WndProc(ref m);
+        }
+
+        private void but_GDAL_Click(object sender, EventArgs e)
+        {
+            FolderBrowserDialog fbd = new FolderBrowserDialog();
+            if (Directory.Exists(Settings.Instance["GDALImageDir"]))
+                fbd.SelectedPath = Settings.Instance["GDALImageDir"];
+
+            if (fbd.ShowDialog() == DialogResult.OK)
+            {
+                if (Directory.Exists(fbd.SelectedPath))
+                {
+                    Settings.Instance["GDALImageDir"] = fbd.SelectedPath;
+                    Utilities.GDAL.OnProgress += GDAL_OnProgress;
+                    Utilities.GDAL.ScanDirectory(fbd.SelectedPath);
+                    DTED.OnProgress += GDAL_OnProgress;
+                    DTED.AddCustomDirectory(fbd.SelectedPath);
+
+                    Loading.Close();
+                }
+            }
+        }
+
+        private void GDAL_OnProgress(double percent, string message)
+        {
+            Loading.ShowLoading((percent).ToString("0.0%") + " " + message, this);
+        }
+
+        private void but_sortlogs_Click(object sender, EventArgs e)
+        {
+            MissionPlanner.Log.LogSort.SortLogs(Directory.GetFiles(Settings.Instance.LogDir, "*.tlog",
+                SearchOption.AllDirectories), Settings.Instance.LogDir);
+            MissionPlanner.Log.LogSort.SortLogs(Directory.GetFiles(Settings.Instance.LogDir, "*.bin",
+                SearchOption.AllDirectories), Settings.Instance.LogDir);
+            MissionPlanner.Log.LogSort.SortLogs(Directory.GetFiles(Settings.Instance.LogDir, "*.log",
+                SearchOption.AllDirectories), Settings.Instance.LogDir);
+            MissionPlanner.Log.LogSort.SortLogs(Directory.GetFiles(Settings.Instance.LogDir, "*.rlog",
+             SearchOption.AllDirectories), Settings.Instance.LogDir);
+        }
+
+        private void but_logdlscp_Click(object sender, EventArgs e)
+        {
+            LogDownloadscp form = new LogDownloadscp();
+            form.Show();
+        }
+
+        private void but_td_Click(object sender, EventArgs e)
+        {
+            string path = "@SYS/threads.txt";
+            if (InputBox.Show("path", "path", ref path) == DialogResult.OK)
+            {
+                if (MainV2.comPort.BaseStream.IsOpen)
+                {
+                    var mavftp = new MAVFtp(MainV2.comPort, MainV2.comPort.sysidcurrent,
+                        (byte) MainV2.comPort.compidcurrent);
+                    var st = mavftp.GetFile(path, new CancellationTokenSource(5000), true);
+                    var output = Path.Combine(Settings.GetUserDataDirectory(), Path.GetFileName(path));
+                    File.WriteAllBytes(output, st.ToArray());
+                }
+            }
+        }
+
+        private void but_dem_Click(object sender, EventArgs e)
+        {
+            UserControl ctl = new UserControl() { Width = 1100, Height = 600, AutoSize = true };
+
+            FlowLayoutPanel flp = new FlowLayoutPanel() { Dock = DockStyle.Fill, AutoScroll = true };
+            var lbl2 = new Label() { Text = "Click on line to zoom to it", AutoSize = true };
+            flp.Controls.Add(lbl2);
+            string line = "";
+
+            foreach (var item in GeoTiff.index)
+            {
+                //log.InfoFormat("Start Point ({0},{1},{2}) --> ({3},{4},{5})", item.i, item.j, item.k, item.x, item.y, item.z);
+
+                line = String.Format("{0} = {1} = {2}*{3} {4} {8}\r\n", item.FileName, item.Area, item.width, item.height, item.bits,
+                    item.xscale, item.yscale, item.zscale, item.srcProjection?.Name ?? item.srcProjection?.Transform?.Name);
+
+                var lbl = new Label() { Text = line, AutoSize = true};
+                lbl.Click += (o, args) =>
+                {
+                    FlightData.instance.gMapControl1.SetZoomToFitRect(item.Area);
+                    FlightPlanner.instance.MainMap.SetZoomToFitRect(item.Area);
+                };
+                flp.Controls.Add(lbl);
+            }
+
+            ctl.Controls.Add(flp);
+            var butt = new MyButton() { Text = "Open DEM Dir", Dock = DockStyle.Top };
+            butt.Click += (a, ev) =>
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(srtm.datadirectory) { UseShellExecute = true });
+            };
+            ctl.Controls.Add(butt);
+
+            ctl.ShowUserControl();
+        }
+
+        private void but_gsttest_Click(object sender, EventArgs e)
+        {
+            System.Threading.ThreadPool.QueueUserWorkItem((a) =>
+            {
+                //GStreamer.test();
+            });
+        }
+
+        private void but_proximity_Click(object sender, EventArgs e)
+        {
+            new ProximityControl(MainV2.comPort.MAV).Show();
+        }
+
+        private void but_dashware_Click(object sender, EventArgs e)
+        {
+            OpenFileDialog ofd = new OpenFileDialog();
+            ofd.Filter = "bin|*.bin;*.BIN";
+            ofd.ShowDialog();
+
+            if (ofd.CheckFileExists)
+            {
+                string options = "GPS;ATT;NTUN;CTUN;MODE;BAT";
+                InputBox.Show("DashWare Types", "Enter Messages you want eg PARM;NTUN;CTUN", ref options);
+
+                var split = options.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+
+                DashWare.Create(ofd.FileName, ofd.FileName + ".csv", split.Length > 0 ? split.ToList() : null);
+            }
+        }
+
+        private void but_mavinspector_Click(object sender, EventArgs e)
+        {
+            new MAVLinkInspector(MainV2.comPort).Show();
+        }
+
+        private void BUT_driverclean_Click(object sender, EventArgs e)
+        {
+            CleanDrivers.Clean();
+        }
+
+        private void but_blupdate_Click(object sender, EventArgs e)
+        {
+            if (CustomMessageBox.Show("Are you sure you want to upgrade the bootloader? This can brick your board",
+                "BL Update", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == (int) DialogResult.Yes)
+                if (CustomMessageBox.Show(
+                    "Are you sure you want to upgrade the bootloader? This can brick your board, Please allow 5 mins for this process",
+                    "BL Update", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == (int) DialogResult.Yes)
+                    try
+                    {
+                        if (MainV2.comPort.doCommand(MainV2.comPort.sysidcurrent,
+                            (byte) MainV2.comPort.compidcurrent, MAVLink.MAV_CMD.FLASH_BOOTLOADER, 0, 0, 0, 0, 290876,
+                            0, 0))
+                        {
+                            CustomMessageBox.Show("Upgraded bootloader");
+                        }
+                        else
+                        {
+                            CustomMessageBox.Show("Failed to upgrade bootloader");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        CustomMessageBox.Show(ex.ToString(), Strings.ERROR);
+                    }
+        }
+
+        private void but_3dmap_Click(object sender, EventArgs e)
+        {
+            var ogl = new OpenGLtest2();
+            var frm = ogl.ShowUserControl();
+        }
+
+        private void but_anonlog_Click(object sender, EventArgs e)
+        {
+            CustomMessageBox.Show("This is beta, please confirm the output file");
+            using (OpenFileDialog ofd = new OpenFileDialog())
+            {
+                ofd.Filter = "tlog or bin/log|*.tlog;*.bin;*.log";
+
+                if (ofd.ShowDialog() == DialogResult.OK)
+                {
+                    var ext = Path.GetExtension(ofd.FileName).ToLower();
+                    if (ext == ".bin")
+                        ext = ".log";
+                    using (SaveFileDialog sfd = new SaveFileDialog())
+                    {
+                        sfd.DefaultExt = ext;
+                        sfd.FileName = Path.GetFileNameWithoutExtension(ofd.FileName) + "-anon" + ext;
+                        if (sfd.ShowDialog() == DialogResult.OK)
+                        {
+                            Privacy.anonymise(ofd.FileName, sfd.FileName);
+                        }
+                    }
+                }
+            }
+        }
+
+        private void but_messageinterval_Click(object sender, EventArgs e)
+        {
+            var form = new Form();
+            FlowLayoutPanel flp = new FlowLayoutPanel();
+            flp.Dock = DockStyle.Fill;
+            flp.AutoSize = true;
+            ComboBox cmb = new ComboBox();
+            cmb.DataSource = Enum.GetNames(typeof(MAVLink.MAVLINK_MSG_ID)).ToSortedList((s, s1) => s.CompareTo(s1));
+            cmb.Width += 50;
+            Button but = new Button();
+            but.Text = "Set";
+            ComboBox cmbrate = new ComboBox();
+            cmbrate.DataSource = Enumerable.Range(0, 200).ToList();
+
+            but.Click += (o, args) =>
+            {
+                var rate = double.Parse(cmbrate.Text.ToString());
+                var value = Enum.Parse(typeof(MAVLink.MAVLINK_MSG_ID), cmb.Text.ToString());
+                float rateratio;
+                if (rate <= 0)
+                    rateratio = (float)rate;
+                else
+                    rateratio = 1.0f / (float) rate * 1000000.0f;
+                try
+                {
+                    MainV2.comPort.doCommand(MainV2.comPort.sysidcurrent, (byte) MainV2.comPort.compidcurrent,
+                        MAVLink.MAV_CMD.SET_MESSAGE_INTERVAL, (float) (int) value, rateratio
+                        , 0, 0, 0, 0, 0);
+                }
+                catch (Exception ex)
+                {
+                    CustomMessageBox.Show(ex.ToString(), Strings.ERROR);
+                }
+            };
+
+            Button but2 = new Button();
+            but2.Text = "Set All";
+            but2.Click += (o, args) =>
+            {
+                var rate = double.Parse(cmbrate.Text.ToString());
+                float rateratio;
+                if (rate <= 0)
+                    rateratio = (float)rate;
+                else
+                    rateratio = 1.0f / (float)rate * 1000000.0f;
+                ((IList)cmb.DataSource).ForEach(a =>
+               {
+                   var value = Enum.Parse(typeof(MAVLink.MAVLINK_MSG_ID), a.ToString());
+                   try
+                   {
+                       MainV2.comPort.doCommand(MainV2.comPort.sysidcurrent, (byte) MainV2.comPort.compidcurrent,
+                           MAVLink.MAV_CMD.SET_MESSAGE_INTERVAL, (float) (int) value,
+                           rateratio, 0, 0, 0, 0, 0, false);
+                   }
+                   catch (Exception ex)
+                   {
+                       CustomMessageBox.Show(ex.ToString(), Strings.ERROR);
+                   }
+               });
+            };
+
+            //cmb.SelectedIndexChanged += (o, args) => { MAVLink.MAVLINK_MSG_ID.GET_MESSAGE_INTERVAL };
+
+            form.Controls.Add(flp);
+
+            flp.Controls.Add(cmb);
+            flp.Controls.Add(cmbrate);
+            flp.Controls.Add(but);
+
+            flp.Controls.Add(but2);
+
+            form.Show(this);
+        }
+
+        private void BUT_xplane_Click(object sender, EventArgs e)
+        {
+
+        }
+
+        private void but_disablearmswitch_Click(object sender, EventArgs e)
+        {
+            if (CustomMessageBox.Show("Are you sure?", "", MessageBoxButtons.YesNo) == (int)DialogResult.Yes)
+            {   
+                var target_system = MainV2.comPort.sysidcurrent;
+                if (target_system == 0) {
+                    log.Info("Not toggling safety on sysid 0");
+                    return;
+                }
+                var custom_mode = (MainV2.comPort.MAV.cs.sensors_enabled.motor_control && MainV2.comPort.MAV.cs.sensors_enabled.seen) ? 1u : 0u;
+                var mode = new MAVLink.mavlink_set_mode_t() { custom_mode = custom_mode, target_system = (byte)(target_system )};
+                MainV2.comPort.setMode(mode, MAVLink.MAV_MODE_FLAG.SAFETY_ARMED);
+            }
+        }
+
+        private void but_hwids_Click(object sender, EventArgs e)
+        {
+            string value = "0";
+            if (InputBox.Show("hwid", "Enter the ID number", ref value, false, true) == DialogResult.OK)
+            {
+                StringBuilder sb = new StringBuilder();
+                var items = value.Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+
+                foreach (var item in items)
+                {
+                    var items2 = item.Split(new char[] { ' ', '\t' });
+
+                    foreach (var item2 in items2)
+                    {
+                        uint uintvalue = 0;
+
+                        if (uint.TryParse(item2, out uintvalue))
+                        {
+                            Device.DeviceStructure test1 = new Device.DeviceStructure(uintvalue);
+
+                            sb.AppendLine(item.Replace('\t', ' ') + " = " + test1.ToString());
+
+                        }
+                    }
+                }
+
+                CustomMessageBox.Show(sb.ToString());
+            }
+        }
+
+        private void but_packetbytes_Click(object sender, EventArgs e)
+        {
+            string input = "";
+            InputBox.Show("input", "enter the hex byte data", ref input, false, true);
+
+            var ishex = input.Contains("0x") || input.ToLower().Any(a => a >= 'a' && a <= 'f');
+
+            var split = input.Replace("0x", ",").Split(new char[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+
+            var buffer = split.Select(a => ishex ? Convert.ToByte(a, 16) : (byte)Convert.ToInt32(a, 10));
+
+            MAVLink.MavlinkParse parse = new MAVLink.MavlinkParse();
+
+            var packet = parse.ReadPacket(new MemoryStream(buffer.ToArray()));
+
+            CustomMessageBox.Show(packet?.ToString() +
+                                  "\n" + packet.ToJSON(Formatting.Indented));
+        }
+
+        private void but_acbarohight_Click(object sender, EventArgs e)
+        {
+            var paramname = MainV2.comPort.MAV.param.ContainsKey("GND_ABS_PRESS") ? "GND_ABS_PRESS" : "BARO1_GND_PRESS";
+
+            var currentQNH = MainV2.comPort.GetParam(paramname).ToString();
+            //338.6388 pa => 100' = 30.48m
+            CustomMessageBox.Show("use at your own risk!!!");
+
+            NumericUpDown mavlinkNumericUpDown = new NumericUpDown();
+            mavlinkNumericUpDown.Minimum = -100;
+            mavlinkNumericUpDown.Maximum = 100;
+
+            mavlinkNumericUpDown.Padding = new Padding(20);
+            mavlinkNumericUpDown.ValueChanged += (o, args) =>
+                {
+                    MainV2.comPort.setParam(MainV2.comPort.sysidcurrent, (byte)MainV2.comPort.compidcurrent, paramname, (float)(double.Parse(currentQNH) + (double)mavlinkNumericUpDown.Value * 11.1));
+                };
+
+            mavlinkNumericUpDown.ShowUserControl();
+        }
+
+        private async void But_stayoutest_Click(object sender, EventArgs e)
+        {
+            var list = new List<Locationwp>();
+            var tl = (MainV2.comPort.MAV.cs.Location.gps_offset(-20, -25));
+            var tr = (MainV2.comPort.MAV.cs.Location.gps_offset(50, -25));
+            var br = (MainV2.comPort.MAV.cs.Location.gps_offset(50, 15));
+            var bl = (MainV2.comPort.MAV.cs.Location.gps_offset(-20, 15));
+
+            var cmd = MAVLink.MAV_CMD.FENCE_POLYGON_VERTEX_INCLUSION;
+
+            //MAVLink.mavlink_mission_request_int_t req = new MAVLink.mavlink_mission_request_int_t();
+
+            var frame = (byte)MAVLink.MAV_FRAME.GLOBAL_INT;
+            list.Add(new Locationwp() { alt = 0, frame = frame, id = (ushort)cmd, p1 = 4, lat = tl.Lat, lng = tl.Lng });
+            list.Add(new Locationwp() { alt = 0, frame = frame, id = (ushort)cmd, p1 = 4, lat = tr.Lat, lng = tr.Lng });
+            list.Add(new Locationwp() { alt = 0, frame = frame, id = (ushort)cmd, p1 = 4, lat = br.Lat, lng = br.Lng });
+            list.Add(new Locationwp() { alt = 0, frame = frame, id = (ushort)cmd, p1 = 4, lat = bl.Lat, lng = bl.Lng });
+
+            list.Add(new Locationwp() { alt = 0, frame = frame, id = (ushort)cmd, p1 = 4, lat = tl.Lat, lng = tl.Lng });
+            list.Add(new Locationwp() { alt = 0, frame = frame, id = (ushort)cmd, p1 = 4, lat = tr.Lat, lng = tr.Lng });
+            list.Add(new Locationwp() { alt = 0, frame = frame, id = (ushort)cmd, p1 = 4, lat = br.Lat, lng = br.Lng });
+            list.Add(new Locationwp() { alt = 0, frame = frame, id = (ushort)cmd, p1 = 4, lat = bl.Lat, lng = bl.Lng });
+
+            tl = (MainV2.comPort.MAV.cs.Location.gps_offset(-40, -45));
+            tr = (MainV2.comPort.MAV.cs.Location.gps_offset(20, -45));
+            br = (MainV2.comPort.MAV.cs.Location.gps_offset(20, 20));
+            bl = (MainV2.comPort.MAV.cs.Location.gps_offset(-40, 20));
+
+            list.Add(new Locationwp() { alt = 0, frame = frame, id = (ushort)cmd, p1 = 4, lat = tl.Lat, lng = tl.Lng });
+            list.Add(new Locationwp() { alt = 0, frame = frame, id = (ushort)cmd, p1 = 4, lat = tr.Lat, lng = tr.Lng });
+            list.Add(new Locationwp() { alt = 0, frame = frame, id = (ushort)cmd, p1 = 4, lat = br.Lat, lng = br.Lng });
+            list.Add(new Locationwp() { alt = 0, frame = frame, id = (ushort)cmd, p1 = 4, lat = bl.Lat, lng = bl.Lng });
+
+            //mav_mission.upload(MainV2.comPort, MAVLink.MAV_MISSION_TYPE.FENCE, list);
+
+            var mission = await mav_mission.download(MainV2.comPort, MainV2.comPort.MAV.sysid, MainV2.comPort.MAV.compid, MAVLink.MAV_MISSION_TYPE.MISSION).ConfigureAwait(true);
+            var fence = await mav_mission.download(MainV2.comPort, MainV2.comPort.MAV.sysid, MainV2.comPort.MAV.compid, MAVLink.MAV_MISSION_TYPE.FENCE).ConfigureAwait(true);
+            var rally = await mav_mission.download(MainV2.comPort, MainV2.comPort.MAV.sysid, MainV2.comPort.MAV.compid, MAVLink.MAV_MISSION_TYPE.RALLY).ConfigureAwait(true);
+        }
+
+        private void but_lockup_Click(object sender, EventArgs e)
+        {
+            if (CustomMessageBox.Show("Lockup the autopilot??? this can cause a CRASH!!!!!!",
+                    "Lockup", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == (int)DialogResult.Yes)
+                if (CustomMessageBox.Show("Lockup the autopilot??? this can cause a CRASH!!!!!!",
+                        "Lockup", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == (int)DialogResult.Yes)
+                    MainV2.comPort.doCommand(MainV2.comPort.MAV.sysid, MainV2.comPort.MAV.compid,
+                        MAVLink.MAV_CMD.PREFLIGHT_REBOOT_SHUTDOWN,
+                        42, 24, 71, 93, 0, 0, 0, false);
+        }
+
+        private void but_hexmavlink_Click(object sender, EventArgs e)
+        {
+            string input = "";
+            InputBox.Show("", "enter the hex value 'fd0500001a0c1'", ref input);
+
+            var packet = StringToByteArray(input);
+
+            var mavpacket = new MAVLink.MavlinkParse().ReadPacket(new MemoryStream(packet));
+
+            CustomMessageBox.Show(mavpacket.ToJSON(Formatting.Indented));
+        }
+
+        public static byte[] StringToByteArray(string hex)
+        {
+            return Enumerable.Range(0, hex.Length)
+                .Where(x => x % 2 == 0)
+                .Select(x => Convert.ToByte(hex.Substring(x, 2), 16))
+                .ToArray();
+        }
+
+        private void but_remotedflogger_Click(object sender, EventArgs e)
+        {
+            RemoteLog.StartRemoteLog(MainV2.comPort, MainV2.comPort.sysidcurrent,
+                (byte) MainV2.comPort.compidcurrent);
+        }
+
+        private void but_paramrestore_Click(object sender, EventArgs e)
+        {
+            CustomMessageBox.Show("This process make take a some time");
+
+            using (var ofd = new OpenFileDialog
+            {
+                AddExtension = true,
+                DefaultExt = ".param",
+                RestoreDirectory = true,
+                Filter = ParamFile.FileMask
+            })
+            {
+                var dr = ofd.ShowDialog();
+
+                if (dr == DialogResult.OK)
+                {
+                    var param2 = ParamFile.loadParamFile(ofd.FileName);
+
+                    ProgressReporterDialogue prd = new ProgressReporterDialogue();
+
+                    prd.DoWork += dialogue =>
+                    {
+                        List<string> fails = new List<string>();
+                        var set = 0;
+                        var alreadyset = 0;
+                        dialogue.UpdateProgressAndStatus(-1, "Get All by Name");
+                        // prefeed
+                        foreach (var d in param2)
+                        {
+                            MainV2.comPort.GetParam(MainV2.comPort.MAV.sysid, MainV2.comPort.MAV.compid, d.Key,
+                                requireresponce: false);
+                        }
+
+                        dialogue.UpdateProgressAndStatus(-1, "Set Enable's");
+                        // enables
+                        foreach (var d in param2.Where(a=>a.Key.ToLower().Contains("enable")))
+                        {
+                            try
+                            {
+                                MainV2.comPort.setParam(MainV2.comPort.MAV.sysid, MainV2.comPort.MAV.compid, d.Key,
+                                    d.Value);
+                            }
+                            catch
+                            {
+
+                            }
+                        }
+
+                        foreach (var d in param2)
+                        {
+                            dialogue.UpdateProgressAndStatus(-1, "Set " + d.Key);
+                            if (dialogue.doWorkArgs.CancelRequested)
+                            {
+                                dialogue.doWorkArgs.CancelAcknowledged = true;
+                                return;
+                            }
+
+                            try
+                            {
+                                if (MainV2.comPort.MAV.param.ContainsKey(d.Key) &&
+                                    MainV2.comPort.MAV.param[d.Key].Value == d.Value)
+                                {
+                                    alreadyset++;
+                                    continue;
+                                }
+
+                                MainV2.comPort.GetParam(MainV2.comPort.MAV.sysid, MainV2.comPort.MAV.compid, d.Key);
+                                
+                                if (d.Key.ToLower().Contains("_id"))
+                                    MainV2.comPort.setParam(MainV2.comPort.MAV.sysid, MainV2.comPort.MAV.compid, d.Key,
+                                        0,
+                                        true);
+
+                                MainV2.comPort.setParam(MainV2.comPort.MAV.sysid, MainV2.comPort.MAV.compid, d.Key,
+                                    d.Value,
+                                    true);
+
+                                set++;
+                            }
+                            catch
+                            {
+                                fails.Add(d.Key);
+                            }
+                        }
+
+                        if (fails.Count > 0)
+                            CustomMessageBox.Show("Set " + set + " params \nAlready Set " 
+                                                  + alreadyset + " params \nFailed to set " 
+                                                  + fails.Aggregate((a, b) => a + "\n" + b));
+                        else
+                            CustomMessageBox.Show("Set " + set + " params \nAlready Set "
+                                                  + alreadyset + " params");
+
+                    };
+
+                    prd.RunBackgroundOperationAsync();
+                }
+            }
+        }
+
+        private void BUT_CoT_Click(object sender, EventArgs e)
+        {
+            new SerialOutputCoT().Show();
+        }
+
+        private void but_ManageCMDList_Click(object sender, EventArgs e)
+        {
+            var CMDList = new MavCommandSelection();
+            CMDList.Show();
+        }
+
+        private void but_signfw_Click(object sender, EventArgs e)
+        {
+            OpenFileDialog ofd = new OpenFileDialog();
+            ofd.Title = "APJ File";
+            ofd.Filter = "*.apj|*.apj";
+            if (ofd.ShowDialog() == DialogResult.OK)
+            {
+                OpenFileDialog ofd2 = new OpenFileDialog();
+                ofd2.Title = "Param File";
+                ofd2.Filter = "*.param|*.param|*.parm|*.parm";
+                if (ofd2.ShowDialog() == DialogResult.OK)
+                {
+                    apj_tool.Process(ofd.FileName, ofd2.FileName);
+
+                    CustomMessageBox.Show("The new APJ has been saved with the source APJ");
+                }
+            }
+        }
+
+        private void but_dfumode_Click(object sender, EventArgs e)
+        {
+            MainV2.comPort.doDFUBoot(MainV2.comPort.sysidcurrent, (byte) MainV2.comPort.compidcurrent);
+        }
+
+        // Perform a force calibration for accelerometers when restoring parameters to a board after a param wipe,
+        // to mark the parameters as calibrated.
+        private void BUT_forcecal_accel_Click(object sender, EventArgs e)
+        {
+            // Send MAV_CMD_PREFLIGHT_CALIBRATION with param5=76 (magic number)
+            try
+            {
+                MainV2.comPort.doCommand(MainV2.comPort.sysidcurrent, (byte)MainV2.comPort.compidcurrent,
+                    MAVLink.MAV_CMD.PREFLIGHT_CALIBRATION, 0, 0, 0, 0, 76, 0, 0, true);
+            }
+            catch (Exception ex)
+            {
+                CustomMessageBox.Show(ex.ToString(), Strings.ERROR);
+            }
+        }
+
+        // Perform a force calibration for compasses when restoring parameters to a board after a param wipe,
+        // to mark the parameters as calibrated.
+        private void BUT_forcecal_mag_Click(object sender, EventArgs e)
+        {
+            // Send MAV_CMD_PREFLIGHT_CALIBRATION with param2=76 (magic number)
+            try
+            {
+                MainV2.comPort.doCommand(MainV2.comPort.sysidcurrent, (byte)MainV2.comPort.compidcurrent,
+                    MAVLink.MAV_CMD.PREFLIGHT_CALIBRATION, 0, 76, 0, 0, 0, 0, 0, true);
+            }
+            catch (Exception ex)
+            {
+                CustomMessageBox.Show(ex.ToString(), Strings.ERROR);
+            }
         }
     }
 }

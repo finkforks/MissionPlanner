@@ -6,7 +6,6 @@ using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Threading;
 using System.Windows.Forms;
-using MissionPlanner;
 
 namespace MissionPlanner.Controls
 {
@@ -36,6 +35,16 @@ namespace MissionPlanner.Controls
         void ConnectionStats_Load(object sender, EventArgs e)
         {
             _subscriptionsDisposable = new CompositeDisposable();
+
+            txt_BytesPerSecondRx.Text = "";
+            txt_BytesPerSecondSent.Text = "";
+            txt_BytesReceived.Text = "";
+            txt_BytesSent.Text = "";
+            txt_LinkQuality.Text = "";
+            txt_MaxPacketInterval.Text = "";
+            txt_PacketsLost.Text = "";
+            txt_PacketsPerSecond.Text = "";
+            txt_PacketsRx.Text = "";
 
             var packetsReceivedCount = _mavlink.WhenPacketReceived.Scan(0, (x, y) => x + y);
             var packetsLostCount = _mavlink.WhenPacketLost.Scan(0, (x, y) => x + y);
@@ -118,7 +127,7 @@ namespace MissionPlanner.Controls
                     .Select(x => x.Interval.Ticks)
                     .Scan(0L, Math.Max)
                     .Select(TimeSpan.FromTicks)
-                    .Select(ts => ts.Milliseconds)
+                    .Select(ts => ts.TotalMilliseconds)
                     .ObserveOn(SynchronizationContext.Current)
                     .SubscribeForTextUpdates(txt_MaxPacketInterval),
             };
@@ -150,16 +159,18 @@ namespace MissionPlanner.Controls
             var packetsReceived = xs.Sum(t => t.Item1);
             var packetsLost = xs.Sum(t => t.Item2);
 
-            return packetsReceived/(packetsReceived + (double) packetsLost);
+            return packetsReceived / (packetsReceived + (double)packetsLost);
         }
 
-        private static string ToHumanReadableByteCount(int i)
+        public static string ToHumanReadableByteCount(int i)
         {
-            if (i > 1024*1024)
-                return string.Format("{0:0.00}Mb", i/(float) (1024*1024));
+            if (i > 1024 * 1024 * 1024)
+                return string.Format("{0:0.00}Gb", i / (float)(1024 * 1024 * 1024));
+            if (i > 1024 * 1024)
+                return string.Format("{0:0.00}Mb", i / (float)(1024 * 1024));
             if (i > 1024)
-                return string.Format("{0:0.00}K", i/(float) 1024);
-            return string.Format("{0:####}", i);
+                return string.Format("{0:0.00}Kb", i / (float)1024);
+            return string.Format("{0:####}b", i);
         }
 
         private void chk_mavlink2_CheckedChanged(object sender, EventArgs e)
@@ -170,6 +181,12 @@ namespace MissionPlanner.Controls
         private void chk_signing_CheckedChanged(object sender, EventArgs e)
         {
             _mavlink.MAV.signing = chk_signing.Checked;
+        }
+
+        private void but_reset_Click(object sender, EventArgs e)
+        {
+            StopUpdates();
+            ConnectionStats_Load(this, null);
         }
     }
 

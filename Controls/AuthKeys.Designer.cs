@@ -28,85 +28,98 @@
         /// </summary>
         private void InitializeComponent()
         {
+            this.components = new System.ComponentModel.Container();
+            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(AuthKeys));
             this.dataGridView1 = new System.Windows.Forms.DataGridView();
             this.FName = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.Use = new System.Windows.Forms.DataGridViewButtonColumn();
             this.Key = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.but_save = new MissionPlanner.Controls.MyButton();
             this.but_add = new MissionPlanner.Controls.MyButton();
+            this.but_disablesigning = new MissionPlanner.Controls.MyButton();
+            this.timer1 = new System.Windows.Forms.Timer(this.components);
+            this.lbl_sgnpkts = new System.Windows.Forms.Label();
             ((System.ComponentModel.ISupportInitialize)(this.dataGridView1)).BeginInit();
             this.SuspendLayout();
             // 
             // dataGridView1
             // 
             this.dataGridView1.AllowUserToAddRows = false;
-            this.dataGridView1.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
-            | System.Windows.Forms.AnchorStyles.Left) 
-            | System.Windows.Forms.AnchorStyles.Right)));
+            resources.ApplyResources(this.dataGridView1, "dataGridView1");
             this.dataGridView1.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
             this.dataGridView1.Columns.AddRange(new System.Windows.Forms.DataGridViewColumn[] {
             this.FName,
             this.Use,
             this.Key});
-            this.dataGridView1.Location = new System.Drawing.Point(12, 12);
             this.dataGridView1.Name = "dataGridView1";
-            this.dataGridView1.Size = new System.Drawing.Size(598, 167);
-            this.dataGridView1.TabIndex = 0;
             this.dataGridView1.CellContentClick += new System.Windows.Forms.DataGridViewCellEventHandler(this.dataGridView1_CellContentClick);
             this.dataGridView1.RowsAdded += new System.Windows.Forms.DataGridViewRowsAddedEventHandler(this.dataGridView1_RowsAdded);
             this.dataGridView1.UserDeletedRow += new System.Windows.Forms.DataGridViewRowEventHandler(this.dataGridView1_UserDeletedRow);
             // 
             // FName
             // 
-            this.FName.HeaderText = "Friendly Name";
+            resources.ApplyResources(this.FName, "FName");
             this.FName.Name = "FName";
             // 
             // Use
             // 
-            this.Use.HeaderText = "Use";
+            resources.ApplyResources(this.Use, "Use");
             this.Use.Name = "Use";
             this.Use.ReadOnly = true;
-            this.Use.Width = 50;
             // 
             // Key
             // 
             this.Key.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.Fill;
-            this.Key.HeaderText = "Key";
+            resources.ApplyResources(this.Key, "Key");
             this.Key.Name = "Key";
             this.Key.ReadOnly = true;
             // 
             // but_save
             // 
-            this.but_save.Location = new System.Drawing.Point(535, 185);
+            resources.ApplyResources(this.but_save, "but_save");
             this.but_save.Name = "but_save";
-            this.but_save.Size = new System.Drawing.Size(75, 23);
-            this.but_save.TabIndex = 1;
-            this.but_save.Text = "Save";
+            this.but_save.TextColorNotEnabled = System.Drawing.Color.FromArgb(((int)(((byte)(64)))), ((int)(((byte)(87)))), ((int)(((byte)(4)))));
             this.but_save.UseVisualStyleBackColor = true;
             this.but_save.Click += new System.EventHandler(this.but_save_Click);
             // 
             // but_add
             // 
-            this.but_add.Location = new System.Drawing.Point(12, 185);
+            resources.ApplyResources(this.but_add, "but_add");
             this.but_add.Name = "but_add";
-            this.but_add.Size = new System.Drawing.Size(75, 23);
-            this.but_add.TabIndex = 2;
-            this.but_add.Text = "Add";
+            this.but_add.TextColorNotEnabled = System.Drawing.Color.FromArgb(((int)(((byte)(64)))), ((int)(((byte)(87)))), ((int)(((byte)(4)))));
             this.but_add.UseVisualStyleBackColor = true;
             this.but_add.Click += new System.EventHandler(this.but_add_Click);
             // 
+            // but_disablesigning
+            // 
+            resources.ApplyResources(this.but_disablesigning, "but_disablesigning");
+            this.but_disablesigning.Name = "but_disablesigning";
+            this.but_disablesigning.TextColorNotEnabled = System.Drawing.Color.FromArgb(((int)(((byte)(64)))), ((int)(((byte)(87)))), ((int)(((byte)(4)))));
+            this.but_disablesigning.UseVisualStyleBackColor = true;
+            this.but_disablesigning.Click += new System.EventHandler(this.but_disablesigning_Click);
+            // 
+            // timer1
+            // 
+            this.timer1.Interval = 150;
+            this.timer1.Tick += new System.EventHandler(this.timer1_Tick);
+            // 
+            // lbl_sgnpkts
+            // 
+            resources.ApplyResources(this.lbl_sgnpkts, "lbl_sgnpkts");
+            this.lbl_sgnpkts.Name = "lbl_sgnpkts";
+            // 
             // AuthKeys
             // 
-            this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
-            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(622, 227);
+            resources.ApplyResources(this, "$this");
+            this.Controls.Add(this.lbl_sgnpkts);
+            this.Controls.Add(this.but_disablesigning);
             this.Controls.Add(this.but_add);
             this.Controls.Add(this.but_save);
             this.Controls.Add(this.dataGridView1);
             this.Name = "AuthKeys";
-            this.Text = "AuthKeys";
             ((System.ComponentModel.ISupportInitialize)(this.dataGridView1)).EndInit();
             this.ResumeLayout(false);
+            this.PerformLayout();
 
         }
 
@@ -118,5 +131,8 @@
         private System.Windows.Forms.DataGridViewTextBoxColumn FName;
         private System.Windows.Forms.DataGridViewButtonColumn Use;
         private System.Windows.Forms.DataGridViewTextBoxColumn Key;
+        private MyButton but_disablesigning;
+        private System.Windows.Forms.Timer timer1;
+        private System.Windows.Forms.Label lbl_sgnpkts;
     }
 }
